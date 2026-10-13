@@ -47851,7 +47851,6 @@ var init_comfyui = __esm({
 
 function getDirectHeaders(contentType = null, auth = null) {
   const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "*/*"
   };
   if (contentType) {
@@ -61821,7 +61820,7 @@ async function pingEdgeServers(force = false) {
             const testUrl = `${server.url}?t=test&v=zh-CN-XiaoxiaoNeural&r=0&p=0&vol=100`;
             const resp = await fetch(testUrl, {
               signal: controller.signal,
-              headers: { "User-Agent": "TTS-Client/1.0", "Accept": "audio/*" }
+              headers: { "Accept": "audio/*" }
             });
             clearTimeout(timeout);
             if (resp.ok) {
@@ -61898,7 +61897,7 @@ async function requestEdgeTTS(text, segIdx, requestParams) {
     try {
       const resp = await fetch(url, {
         signal: controller.signal,
-        headers: { "User-Agent": "TTS-Client/1.0", "Accept": "audio/*" }
+        headers: { "Accept": "audio/*" }
       });
       clearTimeout(timeout);
       if (!resp.ok) {
@@ -61937,7 +61936,7 @@ async function requestEdgeTTS(text, segIdx, requestParams) {
         try {
           const resp = await fetch(url, {
             signal: controller.signal,
-            headers: { "User-Agent": "TTS-Client/1.0", "Accept": "audio/*" }
+            headers: { "Accept": "audio/*" }
           });
           clearTimeout(timeout);
           if (resp.ok) {
@@ -79879,7 +79878,6 @@ function isSettingTrue2(val) {
 }
 function getDirectHeaders2(contentType = null, auth = null) {
   const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "*/*",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     "Cache-Control": "no-cache",
@@ -83529,7 +83527,6 @@ function normalizeNovelAIOtherSiteUrl(value) {
 }
 function getDirectHeaders3(contentType = null, auth = null) {
   const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "*/*"
   };
   if (contentType) {
