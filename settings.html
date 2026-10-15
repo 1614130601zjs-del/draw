@@ -107,6 +107,11 @@
             <div class="st-chatu8-ai-settings-body">
                 <!-- ====== Tab: API 配置 ====== -->
                 <div class="st-chatu8-ai-settings-tab-content active" data-settings-tab-content="api">
+                    <div class="st-chatu8-ai-setting-item checkbox" style="background: rgba(147, 51, 234, 0.08); padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(147, 51, 234, 0.25); margin-bottom: 12px;">
+                        <input type="checkbox" id="chatu8-ai-use-llm-api">
+                        <label for="chatu8-ai-use-llm-api" style="font-weight: bold; color: var(--st-chatu8-text-primary, inherit);">使用 LLM 界面 API 配置</label>
+                        <small style="display: block; margin-top: 4px; line-height: 1.4;">勾选后跟随请求类型配置中的「智绘姬助手」API 预设（支持 Vertex 渠道及其他 LLM 预设），无需在下方重复配置 API。</small>
+                    </div>
                     <div class="st-chatu8-ai-setting-item">
                         <label for="chatu8-ai-api-url">API 地址</label>
                         <input type="text" id="chatu8-ai-api-url" placeholder="如: https://api.openai.com/v1">
