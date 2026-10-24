@@ -69,7 +69,7 @@ function extractUsableVibe(raw){
   if(found||value==null)return;
   if(typeof value==='string'){
    const v=value.trim();
-   if(/^data:image\\/[^;]+;base64,/i.test(v)){found=v.replace(/^data:image\\/[^;]+;base64,/i,'');return;}
+   if(/^data:image\/[^;]+;base64,/i.test(v)){found=v.replace(/^data:image\/[^;]+;base64,/i,'');return;}
    if(imageKeys.test(key)&&/^[A-Za-z0-9+/]+={0,2}$/.test(v)&&v.length>160){found=v;return;}
    return;
   }
@@ -81,9 +81,9 @@ function extractUsableVibe(raw){
  if(!found)return null;
  const serialized=safeMigrationStringify(raw)||'';
  const readNumber=(re,fallback)=>{const m=serialized.match(re);return m?Number(m[1]):fallback;};
- const strength=readNumber(/"(?:reference_strength|referenceStrength|strength)"\\s*:\\s*([0-9.]+)/i,0.6);
- const informationExtracted=readNumber(/"(?:reference_information_extracted|referenceInformationExtracted|information_extracted|informationExtracted|info_extracted)"\\s*:\\s*([0-9.]+)/i,0.7);
- const norm=serialized.match(/"normalize_reference_strength"\\s*:\\s*(true|false)/i);
+ const strength=readNumber(/"(?:reference_strength|referenceStrength|strength)"\s*:\s*([0-9.]+)/i,0.6);
+ const informationExtracted=readNumber(/"(?:reference_information_extracted|referenceInformationExtracted|information_extracted|informationExtracted|info_extracted)"\s*:\s*([0-9.]+)/i,0.7);
+ const norm=serialized.match(/"normalize_reference_strength"\s*:\s*(true|false)/i);
  return {image:found,strength,informationExtracted,normalize:norm?norm[1]==='true':undefined};
 }
 function renderActiveVibes(){
