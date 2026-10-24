@@ -5,6 +5,7 @@ on:
     branches: [feature/lite-image-core]
     paths:
       - "lite/trigger-core.js"
+      - "lite/index.js"
       - "lite/trigger-core.test.mjs"
       - ".github/workflows/lite-trigger-tests.yml"
   pull_request:
@@ -21,5 +22,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Check extension entry syntax
+        run: node --check lite/index.js
       - name: Test marker parsing and task deduplication
         run: node --experimental-default-type=module lite/trigger-core.test.mjs
