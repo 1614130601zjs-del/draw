@@ -27,9 +27,15 @@ async function requestImage(prompt, negativeOverride){
   return /^(data:|https?:)/.test(value)?value:'data:image/png;base64,'+value.replace(/^data:image\/[^;]+;base64,/,'');
  }
  if(!c.endpoint||!c.apiKey)throw new Error('请先在轻绘设置中填写 OpenAI 兼容 API 地址和 Key');
+ const model=String(c.model||'').toLowerCase();
+ const negative=String(negativeOverride??c.negative??'').trim();
  const body={model:c.model,prompt,n:1,size:c.size};
- if(c.model.toLowerCase().includes('gpt-image'))body.quality=c.quality;
- if((negativeOverride??c.negative??'').trim())body.negative_prompt=(negativeOverride??c.negative).trim();
+ if(model.includes('gpt-image')){
+  body.quality=c.quality;
+  if(negative)body.prompt=prompt+'\\n\\nAvoid these visual elements: '+negative;
+ }else if(negative){
+  body.negative_prompt=negative;
+ }
  res=await fetch(c.endpoint.replace(/\/$/, '')+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.apiKey},body:JSON.stringify(body)});
  raw=await res.text();
  try{data=JSON.parse(raw);}catch{throw new Error('接口返回非 JSON（HTTP '+res.status+'）');}
