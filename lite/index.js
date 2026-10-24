@@ -360,7 +360,7 @@ function walkChatu8(data, pathName='', out={artists:[],prompts:[],vibes:[],warni
  const pos=textValue(/画师串|画师|artist|positive.?prompt|正向提示词|正面提示词|promptPositive/i);
  const neg=textValue(/negative.?prompt|负向提示词|负面提示词/i);
  const prompt=textValue(/^prompt$|提示词内容|完整提示词|正文提示词|正向提示词/i);
- const vibeLike=isVibeKey||entries.some(([k,v])=>/vibe|氛围转移/i.test(k))||String(data.type||data.kind||'').toLowerCase().includes('vibe');
+ const vibeLike=isVibeKey||/vibe|氛围转移|参考图组|参考组/i.test(String(data.type||data.kind||''));
  if(vibeLike){
   const serialized=JSON.stringify(data);
   const hasPayload=/data:image\//i.test(serialized)||/base64|encoded.?image|imageData|referenceImage|vibeData|vibe.*data/i.test(serialized);
