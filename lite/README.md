@@ -28,6 +28,7 @@ mkdir -p qinghui-lite
 cd qinghui-lite
 curl -fL https://raw.githubusercontent.com/1614130601zjs-del/draw/feature/lite-image-core/lite/manifest.json -o manifest.json
 curl -fL https://raw.githubusercontent.com/1614130601zjs-del/draw/feature/lite-image-core/lite/index.js -o index.js
+curl -fL https://raw.githubusercontent.com/1614130601zjs-del/draw/feature/lite-image-core/lite/trigger-core.js -o trigger-core.js
 curl -fL https://raw.githubusercontent.com/1614130601zjs-del/draw/feature/lite-image-core/lite/extension.css -o extension.css
 ```
 
