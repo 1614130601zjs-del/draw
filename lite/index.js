@@ -1,43 +1,19 @@
-async function requestImage(prompt, negativeOverride, vibeItem=null){
- const c=cfg();
- let raw='',data=null,res;
- if(c.provider==='novelai'){
-  const naiModel=c.naiModel||'nai-diffusion-4-5-full';
-  const payload={prompt,model:naiModel,sampler:c.naiSampler||'k_euler_ancestral',noise_schedule:c.naiScheduler||'karras',steps:Number(c.naiSteps)||28,scale:Number(c.naiScale)||5,width:Number(c.naiWidth)||832,height:Number(c.naiHeight)||1216,negative_prompt:negativeOverride??c.negative??'',decrisper:false,variety_boost:false,sm:false,sm_dyn:false,seed:-1};
-  if(vibeItem){const vibe=extractUsableVibe(vibeItem.raw);if(!vibe)throw new Error('所选 Vibe 没有可直接发送的参考图编码；请从智绘姬重新导出包含图片数据的设置文件。');payload.reference_image_multiple=[vibe.image];payload.reference_strength_multiple=[vibe.strength];payload.reference_information_extracted_multiple=[vibe.informationExtracted];if(vibe.normalize!==undefined)payload.normalize_reference_strength=vibe.normalize;}
-  if(naiModel.includes('nai-diffusion-5'))payload.use_new_shared_trial=true;
-  res=await fetch('/api/novelai/generate-image',{method:'POST',headers:getRequestHeaders(window.token),body:JSON.stringify(payload)});
-  raw=await res.text();
-  if(!res.ok)throw new Error('NovelAI 请求失败（HTTP '+res.status+'）：'+raw.slice(0,240));
-  try{data=JSON.parse(raw);}catch{}
-  let value=data?.images?.[0]??data?.image??raw.trim();
-  if(typeof value!=='string'||!value)throw new Error('NovelAI 响应中没有可识别的图片');
-  return /^(data:|https?:)/.test(value)?value:'data:image/png;base64,'+value.replace(/^data:image\/[^;]+;base64,/,'');
- }
- if(!c.endpoint||!c.apiKey)throw new Error('请先在轻绘设置中填写 OpenAI 兼容 API 地址和 Key');
- const model=String(c.model||'').toLowerCase();
- const negative=String(negativeOverride??c.negative??'').trim();
- const body={model:c.model,prompt,n:1,size:c.size};
- if(model.includes('gpt-image')){
-  body.quality=c.quality;
-  if(negative)body.prompt=prompt+'\n\nAvoid these visual elements: '+negative;
- }else if(negative){
-  body.negative_prompt=negative;
- }
- res=await fetch(c.endpoint.replace(/\/$/, '')+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.apiKey},body:JSON.stringify(body)});
- raw=await res.text();
- try{data=JSON.parse(raw);}catch{throw new Error('接口返回非 JSON（HTTP '+res.status+'）');}
- if(!res.ok)throw new Error(data?.error?.message||'HTTP '+res.status);
- const item=data?.data?.[0];let url=item?.b64_json?'data:image/png;base64,'+item.b64_json:item?.url;
- const candidates=[data?.images?.[0],data?.output?.[0]];
- for(const v of candidates){
-  if(url||v==null)continue;
-  if(typeof v==='string')url=/^(data:|https?:)/.test(v)?v:'data:image/png;base64,'+v;
-  else if(typeof v==='object')url=v.url||(v.b64_json?'data:image/png;base64,'+v.b64_json:null)||(v.image?'data:image/png;base64,'+v.image:null);
- }
- if(typeof url!=='string'||!url)throw new Error('响应中没有可识别的图片');
- return url;
-}
+import { extension_settings, saveSettingsDebounced } from '../../../extensions.js';
+import { eventSource, event_types } from '../../../script.js';
+import { getContext } from '../../../extensions.js';
+import { getRequestHeaders } from '../../../script.js';
+import { parseImageMarkers, makeTriggerId, TriggerRegistry } from './trigger-core.js';
+
+const EXT = 'qinghui_lite';
+const defaults = { vibes:[], activeVibeIndex:-1, provider:'openai', endpoint:'https://api.openai.com/v1', apiKey:'', model:'gpt-image-1', size:'1024x1024', quality:'medium', naiModel:'nai-diffusion-4-5-full', naiSteps:28, naiScale:5, naiWidth:832, naiHeight:1216, naiSampler:'k_euler_ancestral', naiScheduler:'karras', prompt:'', negative:'', records:[], presets:[], characters:[], prompts:[] };
+const $ = (s, root=document) => root.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let busy=false;
+function cfg(){ extension_settings[EXT] ??= structuredClone(defaults); const s=extension_settings[EXT]; for(const key of ['records','presets','characters','prompts','vibes'])if(!Array.isArray(s[key]))s[key]=[]; return s; }
+const triggerRegistry = new TriggerRegistry();
+const autoTasks = new Set(); // 临时兼容旧入口状态；任务准入与状态以 triggerRegistry 为准。
+function markers(text){return parseImageMarkers(text).map(({index,prompt,marker})=>({index,prompt,raw:marker}));}
+function hideMarkersInTextNode(root){if(!root)return;const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())if(walker.currentNode.nodeValue?.includes('image###'))nodes.push(walker.currentNode);for(const node of nodes){node.nodeValue=node.nodeValue.replace(/image###[\s\S]*?###/g,'');}}
 async function requestImage(prompt, negativeOverride, vibeItem=null){
  const c=cfg();
  let raw='',data=null,res;
@@ -416,9 +392,6 @@ function walkChatu8(data, pathName='', out={artists:[],prompts:[],vibes:[],warni
  const normName=(obj,fallback)=>String(obj?.name||obj?.title||obj?.label||obj?.id||fallback||'未命名').slice(0,160);
  const entries=Object.entries(data);
  const textValue=(...keys)=>{for(const [k,v] of entries)if(keys.some(re=>re.test(k))&&typeof v==='string'&&v.trim())return v.trim();return '';};
-
- // 智绘姬导出格式：groups 内保存分组与每张图的 vibeDataId/strength，
- // vibeData 则以 ID 为键保存实际的 PNG Base64 数据。
  const isChatu8VibeExport=data.groups&&typeof data.groups==='object'&&data.vibeData&&typeof data.vibeData==='object';
  if(isChatu8VibeExport){
   for(const [groupName,group] of Object.entries(data.groups)){
@@ -433,14 +406,10 @@ function walkChatu8(data, pathName='', out={artists:[],prompts:[],vibes:[],warni
    if(images.length)pushUnique(out.vibes,{name:String(groupName||'未命名 Vibe'),groupName:String(groupName||'未命名 Vibe'),entries:images,hasPayload:true,hasRef:false,sourcePath:pathName,source:'st-chatu8'},x=>x.name+'|'+x.sourcePath);
    else if(group.vibes.length)out.warnings.push('Vibe 分组「'+groupName+'」没有找到可用图片数据。');
   }
-  // 画师串和提示词仍可从导出文件的其他字段递归识别，但跳过大体积 Vibe 数据树。
   for(const [k,v] of entries){if(k==='groups'||k==='vibeData')continue;if(v&&typeof v==='object')walkChatu8(v,pathName?pathName+'.'+k:k,out,seen);}
   return out;
  }
- if(Array.isArray(data)){
-  for(let i=0;i<data.length;i++)walkChatu8(data[i],pathName+'['+i+']',out,seen);
-  return out;
- }
+ if(Array.isArray(data)){for(let i=0;i<data.length;i++)walkChatu8(data[i],pathName+'['+i+']',out,seen);return out;}
  const isVibeKey=/vibe|氛围转移|参考图组|参考组/i.test(pathName);
  const name=normName(data,pathName.split(/[.[]/).filter(Boolean).pop());
  const pos=textValue(/画师串|画师|artist|positive.?prompt|正向提示词|正面提示词|promptPositive/i);
@@ -449,18 +418,13 @@ function walkChatu8(data, pathName='', out={artists:[],prompts:[],vibes:[],warni
  const vibeLike=isVibeKey||/vibe|氛围转移|参考图组|参考组/i.test(String(data.type||data.kind||''));
  if(vibeLike){
   const serialized=safeMigrationStringify(data)||'';
-  const hasPayload=/data:image\\//i.test(serialized)||/base64|encoded.?image|imageData|referenceImage|vibeData|vibe.*data/i.test(serialized);
-  const hasRef=/https?:\\/\\/|blob:|cache.?id|image.?id|file.?name|path/i.test(serialized);
+  const hasPayload=serialized.includes('data:image/')||/base64|encoded.?image|imageData|referenceImage|vibeData|vibe.*data/i.test(serialized);
+  const hasRef=/https?:\/\/|blob:|cache.?id|image.?id|file.?name|path/i.test(serialized);
   pushUnique(out.vibes,{name,sourcePath:pathName,raw:data,hasPayload,hasRef},x=>x.name+'|'+x.sourcePath);
  }
  if(pos)pushUnique(out.artists,{name,positive:pos,negative:neg,sourcePath:pathName},x=>x.name+'|'+x.positive);
- else if(prompt&&(entries.some(([k])=>/preset|预设|artist|画师|style|画风/i.test(k))||/preset|预设|artist|画师|style|画风/i.test(pathName))){
-  pushUnique(out.prompts,{name,category:'智绘姬迁移',prompt,negative:neg,sourcePath:pathName},x=>x.name+'|'+x.prompt);
- }
- for(const [k,v] of entries){
-  if(v&&typeof v==='object')walkChatu8(v,pathName?pathName+'.'+k:k,out,seen);
-  else if(typeof v==='string'&&/画师串|artist.?string/i.test(k)&&v.trim())pushUnique(out.artists,{name,positive:v.trim(),negative:neg,sourcePath:pathName+'.'+k},x=>x.name+'|'+x.positive);
- }
+ else if(prompt&&(entries.some(([k])=>/preset|预设|artist|画师|style|画风/i.test(k))||/preset|预设|artist|画师|style|画风/i.test(pathName)))pushUnique(out.prompts,{name,category:'智绘姬迁移',prompt,negative:neg,sourcePath:pathName},x=>x.name+'|'+x.prompt);
+ for(const [k,v] of entries){if(v&&typeof v==='object')walkChatu8(v,pathName?pathName+'.'+k:k,out,seen);else if(typeof v==='string'&&/画师串|artist.?string/i.test(k)&&v.trim())pushUnique(out.artists,{name,positive:v.trim(),negative:neg,sourcePath:pathName+'.'+k},x=>x.name+'|'+x.positive);}
  return out;
 }
 function renderMigrationPreview(candidate,source){
