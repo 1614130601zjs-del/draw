@@ -146,6 +146,7 @@ function renderStatusbarCard(frame,prompt,url,taskKey){
   controls.append(prev,count,next,reroll);card.append(img,controls);frame.append(card);
   card._qlCandidates=[];card._qlIndex=0;card._qlPrompt=prompt;
   const render=()=>{const list=card._qlCandidates;if(!list.length)return;img.src=list[card._qlIndex].url;count.textContent=(card._qlIndex+1)+' / '+list.length;prev.disabled=card._qlIndex<=0;next.disabled=card._qlIndex>=list.length-1;};
+  card._qlAddCandidate=url=>{card._qlCandidates.push({url,at:Date.now()});card._qlIndex=card._qlCandidates.length-1;render();};
   const step=delta=>{const nextIndex=card._qlIndex+delta;if(nextIndex>=0&&nextIndex<card._qlCandidates.length){card._qlIndex=nextIndex;render();}};
   prev.onclick=()=>step(-1);next.onclick=()=>step(1);
   let touchX=0,touchY=0;
@@ -160,11 +161,13 @@ function renderStatusbarCard(frame,prompt,url,taskKey){
  frame.classList.remove('scanning');frame.dataset.qlDone='1';
 }
 function statusbarError(frame,prompt,taskKey,error){
- frame.replaceChildren();const note=document.createElement('div');note.className='ql-statusbar-error';
+ const existingCard=frame.querySelector('.ql-statusbar-card');
+ const note=document.createElement('div');note.className='ql-statusbar-error';
  const text=document.createElement('span');text.textContent='轻绘生成失败：'+(error?.message||String(error))+' ';
  const retry=document.createElement('button');retry.type='button';retry.className='menu_button';retry.textContent='点击重试';
- retry.onclick=async()=>{retry.disabled=true;retry.textContent='生成中…';try{const url=await requestImage(prompt);renderStatusbarCard(frame,prompt,url,taskKey);storeChatRecord(url,prompt,taskKey,{source:'statusbar'});}catch(e){statusbarError(frame,prompt,taskKey,e);}};
- note.append(text,retry);frame.append(note);
+ retry.onclick=async()=>{retry.disabled=true;retry.textContent='生成中…';try{const url=await requestImage(prompt);const card=frame.querySelector('.ql-statusbar-card');if(card&&typeof card._qlAddCandidate==='function'){card._qlAddCandidate(url);note.remove();}else{renderStatusbarCard(frame,prompt,url,taskKey);}storeChatRecord(url,prompt,taskKey,{source:'statusbar'});}catch(e){statusbarError(frame,prompt,taskKey,e);}};
+ note.append(text,retry);
+ if(existingCard){existingCard.append(note);}else{frame.replaceChildren(note);}
 }
 async function processStatusbarFrames(){
  const docs=[document];
