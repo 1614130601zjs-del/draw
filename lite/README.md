@@ -43,10 +43,11 @@ curl -fL https://raw.githubusercontent.com/1614130601zjs-del/draw/feature/lite-i
 
 ## 触发核心测试
 
-本地安装 Node.js 后，在仓库根目录执行：
+本地安装 Node.js 后，在 `lite/` 目录执行：
 
 ```bash
-node --experimental-default-type=module lite/trigger-core.test.mjs
+cd lite
+npm test
 ```
 
 - `ARCHITECTURE.md` / `TRIGGER-CORE.md`：模块边界和触发状态说明。
