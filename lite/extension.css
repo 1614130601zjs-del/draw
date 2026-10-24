@@ -7,3 +7,6 @@
 #chat .ql-chat-image-controls button{margin:0;min-height:32px}
 #chat .ql-chat-image-count{font-size:12px;opacity:.75;min-width:42px;text-align:center}
 #chat .ql-chat-image-status{font-size:12px;opacity:.8;overflow-wrap:anywhere}
+
+/* Horizontal candidate swipes while preserving normal vertical page scrolling. */
+#chat .ql-chat-image img,#chat .ql-statusbar-card img{touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:default}
