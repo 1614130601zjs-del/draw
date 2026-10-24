@@ -44,8 +44,8 @@ curl -fL https://raw.githubusercontent.com/1614130601zjs-del/draw/feature/lite-i
 
 - `index.html` / `style.css` / `app.js`：独立浏览器 UI 原型，方便快速查看完整页面导航与模块布局。
 - `manifest.json` / `index.js` / `extension.css`：可安装的 SillyTavern 测试扩展。
-- `trigger-core.js`：独立的触发标记解析与任务状态核心，目前尚未绑定酒馆消息事件。
-- `tests/trigger-core.test.js`：触发解析、消息完成门控、去重和显式重试的回归测试。
+- `trigger-core.js`：独立的触发标记解析与任务状态核心；安装入口已复用其中的标记解析函数，任务注册表仍在逐步接入。
+- `trigger-core.test.js`：触发解析、消息完成门控、去重、重试和再绘候选保留的回归测试。
 
 ## 触发核心测试
 
@@ -53,7 +53,7 @@ curl -fL https://raw.githubusercontent.com/1614130601zjs-del/draw/feature/lite-i
 
 ```bash
 cd lite
-npm test
+node --test trigger-core.test.js
 ```
 
 - `ARCHITECTURE.md` / `TRIGGER-CORE.md`：模块边界和触发状态说明。
