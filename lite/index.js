@@ -5,11 +5,11 @@ import { getRequestHeaders } from '../../../script.js';
 import { parseImageMarkers, makeTriggerId, TriggerRegistry } from './trigger-core.js';
 
 const EXT = 'qinghui_lite';
-const defaults = { provider:'openai', endpoint:'https://api.openai.com/v1', apiKey:'', model:'gpt-image-1', size:'1024x1024', quality:'medium', naiModel:'nai-diffusion-4-5-full', naiSteps:28, naiScale:5, naiWidth:832, naiHeight:1216, naiSampler:'k_euler_ancestral', naiScheduler:'karras', prompt:'', negative:'', records:[], presets:[], characters:[], prompts:[] };
+const defaults = { vibes:[], provider:'openai', endpoint:'https://api.openai.com/v1', apiKey:'', model:'gpt-image-1', size:'1024x1024', quality:'medium', naiModel:'nai-diffusion-4-5-full', naiSteps:28, naiScale:5, naiWidth:832, naiHeight:1216, naiSampler:'k_euler_ancestral', naiScheduler:'karras', prompt:'', negative:'', records:[], presets:[], characters:[], prompts:[] };
 const $ = (s, root=document) => root.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let busy=false;
-function cfg(){ extension_settings[EXT] ??= structuredClone(defaults); const s=extension_settings[EXT]; for(const key of ['records','presets','characters','prompts'])if(!Array.isArray(s[key]))s[key]=[]; return s; }
+function cfg(){ extension_settings[EXT] ??= structuredClone(defaults); const s=extension_settings[EXT]; for(const key of ['records','presets','characters','prompts','vibes'])if(!Array.isArray(s[key]))s[key]=[]; return s; }
 const triggerRegistry = new TriggerRegistry();
 const autoTasks = new Set(); // 临时兼容旧入口状态；任务准入与状态以 triggerRegistry 为准。
 function markers(text){return parseImageMarkers(text).map(({index,prompt,marker})=>({index,prompt,raw:marker}));}
@@ -314,7 +314,7 @@ function html(){return `<section id="qinghui-lite-panel">
 <div class="ql-card"><h3>最近生成（本地记录）</h3><div id="ql-history"></div><button id="ql-clear" class="menu_button">清空记录</button></div>
 <div class="ql-card"><h3>提示词库</h3><div class="ql-row"><input id="ql-prompt-name" placeholder="名称"><input id="ql-prompt-category" placeholder="分类"></div><label>完整正向提示词</label><textarea id="ql-library-prompt" placeholder="保存完整提示词"></textarea><label>负向提示词</label><textarea id="ql-library-negative"></textarea><button id="ql-prompt-save" class="menu_button">保存提示词</button><div id="ql-prompts-list"></div></div>
 <div class="ql-card"><h3>角色库</h3><input id="ql-character-name" placeholder="角色名称"><label>固定外貌词</label><textarea id="ql-character-appearance"></textarea><button id="ql-character-save" class="menu_button">保存角色</button><div id="ql-characters-list"></div></div>
-<div class="ql-card"><h3>画风预设</h3><input id="ql-preset-name" placeholder="预设名称"><label>正向画风串</label><textarea id="ql-preset-positive"></textarea><label>负向提示词</label><textarea id="ql-preset-negative"></textarea><button id="ql-preset-save" class="menu_button">保存预设</button><div id="ql-presets-list"></div></div></section>`;}
+<div class="ql-card"><h3>画风预设</h3><input id="ql-preset-name" placeholder="预设名称"><label>正向画风串</label><textarea id="ql-preset-positive"></textarea><label>负向提示词</label><textarea id="ql-preset-negative"></textarea><button id="ql-preset-save" class="menu_button">保存预设</button><div id="ql-presets-list"></div></div><div class="ql-card"><h3>智绘姬一键迁移</h3><p class="ql-muted">先扫描当前酒馆可访问的智绘姬设置；也可以选择智绘姬导出的 JSON 文件。迁移前会预览，已有数据不会被覆盖。</p><div class="ql-row"><button id="ql-migrate-scan" class="menu_button">扫描当前酒馆</button><button id="ql-migrate-file-btn" class="menu_button">选择导出文件</button><input id="ql-migrate-file" type="file" accept=".json,.json5,.txt,application/json" hidden></div><div id="ql-migrate-preview" class="ql-muted" role="status">尚未扫描。</div><button id="ql-migrate-import" class="menu_button" disabled>确认导入</button><p class="ql-muted">画师串与文本预设可迁移；Vibe 只有在导出数据包含可用的图片/编码内容时才能完整恢复，若只有引用或缓存 ID，会在预览中提示。</p></div></section>`;}
 function read(){const s=cfg();s.provider=$('#ql-provider').value;s.endpoint=$('#ql-endpoint').value.trim().replace(/\/$/,'');s.apiKey=$('#ql-key').value.trim();s.model=$('#ql-model').value.trim()||'gpt-image-1';s.size=$('#ql-size').value;s.quality=$('#ql-quality').value;s.naiModel=$('#ql-nai-model').value.trim()||'nai-diffusion-4-5-full';s.naiSteps=Number($('#ql-nai-steps').value)||28;s.naiScale=Number($('#ql-nai-scale').value)||5;s.naiWidth=Number($('#ql-nai-width').value)||832;s.naiHeight=Number($('#ql-nai-height').value)||1216;s.naiSampler=$('#ql-nai-sampler').value;s.naiScheduler=$('#ql-nai-scheduler').value;s.prompt=$('#ql-prompt').value;s.negative=$('#ql-negative').value;save();}
 function status(t){$('#ql-status').textContent=t;}
 function history(){
@@ -340,7 +340,95 @@ function renderLibrary(){
  presets?.querySelectorAll('[data-preset-edit]').forEach(b=>b.onclick=()=>{const p=s.presets[+b.dataset.presetEdit];$('#ql-preset-name').value=p.name||'';$('#ql-preset-positive').value=p.positive||'';$('#ql-preset-negative').value=p.negative||'';$('#ql-preset-save').dataset.edit=String(+b.dataset.presetEdit);$('#ql-preset-save').textContent='保存修改';});
   presets?.querySelectorAll('[data-preset-delete]').forEach(b=>b.onclick=()=>{s.presets.splice(+b.dataset.presetDelete,1);save();renderLibrary();});
 }
-function init(){const root=$('#qinghui-lite-panel');if(!root||root.dataset.ready)return;root.dataset.ready='1';const s=cfg();$('#ql-provider').value=s.provider||'openai';$('#ql-endpoint').value=s.endpoint;$('#ql-key').value=s.apiKey;$('#ql-model').value=s.model;$('#ql-size').value=s.size;$('#ql-quality').value=s.quality;$('#ql-nai-model').value=s.naiModel||'nai-diffusion-4-5-full';$('#ql-nai-steps').value=s.naiSteps||28;$('#ql-nai-scale').value=s.naiScale||5;$('#ql-nai-width').value=s.naiWidth||832;$('#ql-nai-height').value=s.naiHeight||1216;$('#ql-nai-sampler').value=s.naiSampler||'k_euler_ancestral';$('#ql-nai-scheduler').value=s.naiScheduler||'karras';$('#ql-prompt').value=s.prompt;$('#ql-negative').value=s.negative;const toggleProvider=()=>{const nai=$('#ql-provider').value==='novelai';$('#ql-openai-settings').hidden=nai;$('#ql-nai-settings').hidden=!nai;};$('#ql-provider').onchange=toggleProvider;toggleProvider();history();renderLibrary();
+
+let migrationCandidate=null;
+function walkChatu8(data, pathName='', out={artists:[],prompts:[],vibes:[],warnings:[]}, seen=new WeakSet()){
+ if(!data||typeof data!=='object'||seen.has(data))return out;
+ seen.add(data);
+ const pushUnique=(arr,item,keyFn)=>{if(!arr.some(x=>keyFn(x)===keyFn(item)))arr.push(item);};
+ const normName=(obj,fallback)=>String(obj?.name||obj?.title||obj?.label||obj?.id||fallback||'未命名').slice(0,160);
+ const isVibeKey=/vibe|氛围转移|参考图组|参考组/i.test(pathName);
+ if(Array.isArray(data)){
+  for(let i=0;i<data.length;i++)walkChatu8(data[i],pathName+'['+i+']',out,seen);
+  return out;
+ }
+ const entries=Object.entries(data);
+ const textValue=(...keys)=>{for(const [k,v] of entries)if(keys.some(re=>re.test(k))&&typeof v==='string'&&v.trim())return v.trim();return '';};
+ const name=normName(data,pathName.split(/[.[]/).filter(Boolean).pop());
+ const pos=textValue(/画师串|画师|artist|positive.?prompt|正向提示词|正面提示词|promptPositive/i);
+ const neg=textValue(/negative.?prompt|负向提示词|负面提示词/i);
+ const prompt=textValue(/^prompt$|提示词内容|完整提示词|正文提示词|正向提示词/i);
+ const vibeLike=isVibeKey||entries.some(([k,v])=>/vibe|氛围转移/i.test(k))||String(data.type||data.kind||'').toLowerCase().includes('vibe');
+ if(vibeLike){
+  const serialized=JSON.stringify(data);
+  const hasPayload=/data:image\//i.test(serialized)||/base64|encoded.?image|imageData|referenceImage|vibeData|vibe.*data/i.test(serialized);
+  const hasRef=/https?:\/\/|blob:|cache.?id|image.?id|file.?name|path/i.test(serialized);
+  pushUnique(out.vibes,{name,sourcePath:pathName,raw:data,hasPayload,hasRef},x=>x.name+'|'+x.sourcePath);
+ }
+ if(pos){
+  pushUnique(out.artists,{name,positive:pos,negative:neg,sourcePath:pathName},x=>x.name+'|'+x.positive);
+ } else if(prompt && (entries.some(([k])=>/preset|预设|artist|画师|style|画风/i.test(k)) || /preset|预设|artist|画师|style|画风/i.test(pathName))){
+  pushUnique(out.prompts,{name,category:'智绘姬迁移',prompt,negative:neg,sourcePath:pathName},x=>x.name+'|'+x.prompt);
+ }
+ for(const [k,v] of entries){
+  if(v&&typeof v==='object')walkChatu8(v,pathName?pathName+'.'+k:k,out,seen);
+  else if(typeof v==='string'&&/画师串|artist.?string/i.test(k)&&v.trim()){
+   pushUnique(out.artists,{name,positive:v.trim(),negative:neg,sourcePath:pathName+'.'+k},x=>x.name+'|'+x.positive);
+  }
+ }
+ return out;
+}
+function renderMigrationPreview(candidate,source){
+ migrationCandidate=candidate;
+ const host=$('#ql-migrate-preview');if(!host)return;
+ const vibePayload=candidate.vibes.filter(v=>v.hasPayload).length;
+ const vibeRef=candidate.vibes.length-vibePayload;
+ host.textContent=source+'：画师串 '+candidate.artists.length+' 条，提示词预设 '+candidate.prompts.length+' 条，Vibe 项目 '+candidate.vibes.length+' 条。'+(vibeRef?(' 其中 '+vibeRef+' 条未检测到可直接恢复的内嵌图片/编码内容。'):'')+(candidate.artists.length+candidate.prompts.length+candidate.vibes.length?' 请确认后导入。':' 未识别到可迁移项目。');
+ $('#ql-migrate-import').disabled=!(candidate.artists.length||candidate.prompts.length||candidate.vibes.length);
+}
+function scanChatu8Settings(){
+ const found=[];
+ for(const [key,value] of Object.entries(extension_settings||{})){
+  if(/chatu8|智绘姬|zhihuiji/i.test(key))found.push({key,value});
+ }
+ if(!found.length){renderMigrationPreview({artists:[],prompts:[],vibes:[],warnings:[]},'当前酒馆扫描');return;}
+ const merged={artists:[],prompts:[],vibes:[],warnings:[]};
+ for(const item of found)walkChatu8(item.value,item.key,merged);
+ renderMigrationPreview(merged,'当前酒馆扫描（'+found.map(x=>x.key).join('、')+'）');
+}
+async function readMigrationFile(file){
+ try{
+  const text=await file.text();
+  let data;
+  try{data=JSON.parse(text);}catch{throw new Error('文件不是有效 JSON。请从智绘姬导出设置/预设文件后再选择。');}
+  const candidate=walkChatu8(data,file.name);
+  renderMigrationPreview(candidate,'文件 '+file.name);
+ }catch(e){$('#ql-migrate-preview').textContent='读取失败：'+(e?.message||String(e));$('#ql-migrate-import').disabled=true;}
+}
+function importChatu8Candidate(){
+ const candidate=migrationCandidate;if(!candidate)return;
+ const s=cfg();let artists=0,prompts=0,vibes=0;
+ for(const item of candidate.artists){
+  if(!item.positive)continue;
+  if(s.presets.some(x=>x.name===item.name&&x.positive===item.positive))continue;
+  s.presets.unshift({name:item.name,positive:item.positive,negative:item.negative||'',source:'st-chatu8',sourcePath:item.sourcePath,updatedAt:Date.now()});artists++;
+ }
+ for(const item of candidate.prompts){
+  if(!item.prompt)continue;
+  if(s.prompts.some(x=>x.name===item.name&&x.prompt===item.prompt))continue;
+  s.prompts.unshift({name:item.name,category:item.category||'智绘姬迁移',prompt:item.prompt,negative:item.negative||'',source:'st-chatu8',sourcePath:item.sourcePath,updatedAt:Date.now()});prompts++;
+ }
+ for(const item of candidate.vibes){
+  if(s.vibes.some(x=>x.name===item.name&&x.sourcePath===item.sourcePath))continue;
+  s.vibes.unshift({name:item.name,raw:item.raw,hasPayload:item.hasPayload,hasRef:item.hasRef,sourcePath:item.sourcePath,source:'st-chatu8',importedAt:Date.now()});vibes++;
+ }
+ s.presets=s.presets.slice(0,500);s.prompts=s.prompts.slice(0,500);s.vibes=s.vibes.slice(0,200);
+ save();renderLibrary();
+ status('迁移完成：画师串 '+artists+' 条，提示词 '+prompts+' 条，Vibe 项目 '+vibes+' 条。Vibe 资源仍需逐项检查是否含完整编码/图片数据。');
+ $('#ql-migrate-import').disabled=true;
+}
+
+function init(){const root=$('#qinghui-lite-panel');if(!root||root.dataset.ready)return;root.dataset.ready='1';const s=cfg();$('#ql-provider').value=s.provider||'openai';$('#ql-endpoint').value=s.endpoint;$('#ql-key').value=s.apiKey;$('#ql-model').value=s.model;$('#ql-size').value=s.size;$('#ql-quality').value=s.quality;$('#ql-nai-model').value=s.naiModel||'nai-diffusion-4-5-full';$('#ql-nai-steps').value=s.naiSteps||28;$('#ql-nai-scale').value=s.naiScale||5;$('#ql-nai-width').value=s.naiWidth||832;$('#ql-nai-height').value=s.naiHeight||1216;$('#ql-nai-sampler').value=s.naiSampler||'k_euler_ancestral';$('#ql-nai-scheduler').value=s.naiScheduler||'karras';$('#ql-prompt').value=s.prompt;$('#ql-negative').value=s.negative;const toggleProvider=()=>{const nai=$('#ql-provider').value==='novelai';$('#ql-openai-settings').hidden=nai;$('#ql-nai-settings').hidden=!nai;};$('#ql-provider').onchange=toggleProvider;toggleProvider();history();renderLibrary();$('#ql-migrate-scan').onclick=scanChatu8Settings;$('#ql-migrate-file-btn').onclick=()=>$('#ql-migrate-file').click();$('#ql-migrate-file').onchange=e=>{const f=e.target.files?.[0];if(f)readMigrationFile(f);};$('#ql-migrate-import').onclick=importChatu8Candidate;
 $('#ql-save').onclick=()=>{read();status('设置已保存到酒馆扩展设置。');};
 $('#ql-generate').onclick=async()=>{
  if(busy)return;read();const conf=cfg();
