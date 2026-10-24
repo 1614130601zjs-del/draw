@@ -1,15 +1,10 @@
 /**
- * 轻绘触发核心（纯逻辑层；实际入口的基础事件绑定位于 index.js）。
+ * 轻绘触发核心（纯逻辑层）。
  *
- * 设计目标：
- * - 只识别完整的 image###提示词### 标记，避免流式过程中提前触发；
- * - 允许同一消息内多个标记；
- * - 由调用方提供稳定 messageId / targetKey，不通过全局 DOM 猜测目标；
- * - 每次请求一张；同一 triggerId 的新结果由上层追加，不覆盖旧图。
- *
- * 状态栏 DOM 精准回填、完整消息生命周期与正式存储适配仍需单独实现。
+ * 只解析完整 image###提示词### 标记；由入口层提供稳定消息/目标标识。
+ * 自动触发通过 begin() 幂等去重；用户主动“再画一张”必须走 beginCandidate()，
+ * 保留同一触发任务下已经生成的结果，避免把旧图覆盖掉。
  */
-
 export const IMAGE_MARKER = "image###";
 
 export function parseImageMarkers(text) {
@@ -20,20 +15,11 @@ export function parseImageMarkers(text) {
   while ((match = re.exec(text)) !== null) {
     const prompt = match[1].trim();
     if (!prompt) continue;
-    found.push({
-      index: match.index,
-      end: re.lastIndex,
-      prompt,
-      marker: match[0],
-    });
+    found.push({ index: match.index, end: re.lastIndex, prompt, marker: match[0] });
   }
   return found;
 }
 
-/**
- * 仅从完整消息文本提取标记。流式中间态应由调用方传入 isFinal=false，
- * 以免半截标记或尚未闭合的提示词触发生图。
- */
 export function inspectMessage(text, { isFinal = false } = {}) {
   const markers = parseImageMarkers(text);
   return {
@@ -52,31 +38,47 @@ export function makeTriggerId({ chatId, messageId, markerIndex }) {
   return [chatId, messageId, markerIndex].map(String).join(":");
 }
 
-/**
- * 小型幂等任务表。状态变化：
- * pending -> running -> succeeded | failed
- * failed 可由用户显式 retry；同一 trigger 的成功结果不会被静默覆盖。
- */
 export class TriggerRegistry {
   #tasks = new Map();
 
   begin(triggerId, payload = {}) {
     const existing = this.#tasks.get(triggerId);
     if (existing && ["pending", "running", "succeeded"].includes(existing.status)) {
-      return { accepted: false, task: { ...existing } };
+      return { accepted: false, task: this.get(triggerId) };
     }
+    return this.#start(triggerId, payload, existing);
+  }
+
+  /** 用户主动再画一张：成功任务允许重新进入 running，但不清空旧结果。 */
+  beginCandidate(triggerId, payload) {
+    const existing = this.#tasks.get(triggerId);
+    if (!existing || existing.status !== "succeeded") {
+      return { accepted: false, task: existing ? this.get(triggerId) : null };
+    }
+    return this.#start(triggerId, payload ?? existing.payload, existing);
+  }
+
+  retry(triggerId, payload) {
+    const existing = this.#tasks.get(triggerId);
+    if (!existing || existing.status !== "failed") {
+      return { accepted: false, task: existing ? this.get(triggerId) : null };
+    }
+    return this.#start(triggerId, payload ?? existing.payload, existing);
+  }
+
+  #start(triggerId, payload, existing) {
     const task = {
       triggerId,
       status: "pending",
       attempts: (existing?.attempts ?? 0) + 1,
       createdAt: existing?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
-      resultIds: existing?.resultIds ?? [],
-      payload: { ...payload },
+      resultIds: [...(existing?.resultIds ?? [])],
+      payload: { ...(payload ?? {}) },
       error: null,
     };
     this.#tasks.set(triggerId, task);
-    return { accepted: true, task: { ...task } };
+    return { accepted: true, task: this.get(triggerId) };
   }
 
   markRunning(triggerId) {
@@ -90,7 +92,7 @@ export class TriggerRegistry {
     return this.#update(triggerId, task => {
       if (task.status !== "running") throw new Error("只有 running 任务可以成功结束");
       task.status = "succeeded";
-      if (resultId != null) task.resultIds = [...task.resultIds, resultId];
+      if (resultId != null) task.resultIds.push(resultId);
       task.error = null;
     });
   }
@@ -105,17 +107,13 @@ export class TriggerRegistry {
     });
   }
 
-  retry(triggerId, payload) {
-    const existing = this.#tasks.get(triggerId);
-    if (!existing || existing.status !== "failed") {
-      return { accepted: false, task: existing ? { ...existing } : null };
-    }
-    return this.begin(triggerId, payload ?? existing.payload);
-  }
-
   get(triggerId) {
     const task = this.#tasks.get(triggerId);
-    return task ? { ...task, resultIds: [...task.resultIds], payload: { ...task.payload } } : null;
+    return task ? {
+      ...task,
+      resultIds: [...task.resultIds],
+      payload: { ...task.payload },
+    } : null;
   }
 
   #update(triggerId, update) {
@@ -123,6 +121,6 @@ export class TriggerRegistry {
     if (!task) throw new Error(`未知触发任务：${triggerId}`);
     update(task);
     task.updatedAt = Date.now();
-    return { ...task, resultIds: [...task.resultIds], payload: { ...task.payload } };
+    return this.get(triggerId);
   }
 }
