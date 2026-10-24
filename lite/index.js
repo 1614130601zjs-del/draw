@@ -49,7 +49,19 @@ async function processLatestAssistantMessage(){
   autoTasks.add(taskKey);
   const pending=document.createElement('p');pending.className='ql-chat-image-status';pending.textContent='轻绘：正在生成图片…';host.append(pending);
   try{const url=await requestImage(marker.prompt);pending.remove();addMessageImage(host,url,marker.prompt,taskKey,{messageIndex});storeChatRecord(url,marker.prompt,taskKey,{messageIndex});}
-  catch(error){pending.textContent='轻绘生成失败：'+(error?.message||String(error));autoTasks.delete(taskKey);}
+  catch(error){
+   pending.replaceChildren();
+   const message=document.createElement('span');
+   message.textContent='轻绘生成失败：'+(error?.message||String(error))+' ';
+   const retry=document.createElement('button');
+   retry.type='button';retry.className='menu_button';retry.textContent='点击重试';
+   retry.addEventListener('click',()=>{
+    if(autoTasks.has(taskKey))autoTasks.delete(taskKey);
+    pending.remove();
+    processLatestAssistantMessage().catch(e=>console.warn('[轻绘 Lite] 手动重试失败',e));
+   },{once:true});
+   pending.append(message,retry);
+  }
  }
 }
 function save(){ saveSettingsDebounced(); }
@@ -70,4 +82,12 @@ $('#ql-save').onclick=()=>{read();status('设置已保存到酒馆扩展设置�
 $('#ql-generate').onclick=async()=>{if(busy)return;read();const c=cfg();if(!c.endpoint||!c.apiKey||!c.prompt.trim()){status('请填写 API 地址、Key 和正向提示词。');return;}busy=true;$('#ql-generate').disabled=true;$('#ql-result').replaceChildren();status('正在请求生图接口……');try{const body={model:c.model,prompt:c.prompt.trim(),n:1,size:c.size};if(c.model.toLowerCase().includes('gpt-image'))body.quality=c.quality;if(c.negative.trim())body.negative_prompt=c.negative.trim();const res=await fetch(c.endpoint+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.apiKey},body:JSON.stringify(body)});const raw=await res.text();let data;try{data=JSON.parse(raw);}catch{throw Error('接口返回非 JSON（HTTP '+res.status+'），请检查供应商兼容格式。');}if(!res.ok)throw Error(data?.error?.message||'HTTP '+res.status);const item=data?.data?.[0];let url=item?.b64_json?'data:image/png;base64,'+item.b64_json:item?.url;if(!url&&data?.images?.[0]){const v=data.images[0];url=/^(data:|https?:)/.test(v)?v:'data:image/png;base64,'+v;}if(!url)throw Error('响应中没有可识别的图片。');const img=document.createElement('img');img.alt='轻绘生成结果';img.src=url;$('#ql-result').append(img);c.records.unshift({at:Date.now(),prompt:c.prompt.trim(),negative:c.negative.trim(),model:c.model,size:c.size,quality:c.quality,dataUrl:url});c.records=c.records.slice(0,20);save();history();status('生成完成。记录已保存在酒馆扩展设置中。');}catch(e){status('生成失败：'+(e?.message||String(e))+'。部分供应商需要支持浏览器 CORS。');}finally{busy=false;$('#ql-generate').disabled=false;}};
 $('#ql-clear').onclick=()=>{if(confirm('清空轻绘本地生成记录？不会删除聊天图片。')){cfg().records=[];save();history();status('记录已清空。');}};
 }
-jQuery(()=>{const mount=$('#extensions_settings2')||$('#extensions_settings');if(mount&&!$('#qinghui-lite-panel')){mount.insertAdjacentHTML('beforeend',html());init();}if(eventSource&&event_types?.GENERATION_ENDED){eventSource.on(event_types.GENERATION_ENDED,()=>{setTimeout(()=>{processLatestAssistantMessage().catch(e=>console.warn('[轻绘 Lite] 自动触发失败',e));},80);});}});
+jQuery(()=>{
+ const mount=$('#extensions_settings2')||$('#extensions_settings');
+ if(mount&&!$('#qinghui-lite-panel')){mount.insertAdjacentHTML('beforeend',html());init();}
+ if(!eventSource||!event_types)return;
+ const scheduleScan=()=>setTimeout(()=>{processLatestAssistantMessage().catch(e=>console.warn('[轻绘 Lite] 自动触发失败',e));},100);
+ if(event_types.GENERATION_ENDED)eventSource.on(event_types.GENERATION_ENDED,scheduleScan);
+ if(event_types.MESSAGE_SWIPED)eventSource.on(event_types.MESSAGE_SWIPED,scheduleScan);
+ if(event_types.CHAT_CHANGED)eventSource.on(event_types.CHAT_CHANGED,()=>{autoTasks.clear();});
+});
