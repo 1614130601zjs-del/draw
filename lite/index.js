@@ -5,7 +5,7 @@ import { getRequestHeaders } from '../../../script.js';
 import { parseImageMarkers, makeTriggerId, TriggerRegistry } from './trigger-core.js';
 
 const EXT = 'qinghui_lite';
-const defaults = { vibes:[], provider:'openai', endpoint:'https://api.openai.com/v1', apiKey:'', model:'gpt-image-1', size:'1024x1024', quality:'medium', naiModel:'nai-diffusion-4-5-full', naiSteps:28, naiScale:5, naiWidth:832, naiHeight:1216, naiSampler:'k_euler_ancestral', naiScheduler:'karras', prompt:'', negative:'', records:[], presets:[], characters:[], prompts:[] };
+const defaults = { vibes:[], activeVibeIndex:-1, provider:'openai', endpoint:'https://api.openai.com/v1', apiKey:'', model:'gpt-image-1', size:'1024x1024', quality:'medium', naiModel:'nai-diffusion-4-5-full', naiSteps:28, naiScale:5, naiWidth:832, naiHeight:1216, naiSampler:'k_euler_ancestral', naiScheduler:'karras', prompt:'', negative:'', records:[], presets:[], characters:[], prompts:[] };
 const $ = (s, root=document) => root.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let busy=false;
@@ -14,12 +14,13 @@ const triggerRegistry = new TriggerRegistry();
 const autoTasks = new Set(); // 临时兼容旧入口状态；任务准入与状态以 triggerRegistry 为准。
 function markers(text){return parseImageMarkers(text).map(({index,prompt,marker})=>({index,prompt,raw:marker}));}
 function hideMarkersInTextNode(root){if(!root)return;const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())if(walker.currentNode.nodeValue?.includes('image###'))nodes.push(walker.currentNode);for(const node of nodes){node.nodeValue=node.nodeValue.replace(/image###[\s\S]*?###/g,'');}}
-async function requestImage(prompt, negativeOverride){
+async function requestImage(prompt, negativeOverride, vibeItem=null){
  const c=cfg();
  let raw='',data=null,res;
  if(c.provider==='novelai'){
   const naiModel=c.naiModel||'nai-diffusion-4-5-full';
   const payload={prompt,model:naiModel,sampler:c.naiSampler||'k_euler_ancestral',noise_schedule:c.naiScheduler||'karras',steps:Number(c.naiSteps)||28,scale:Number(c.naiScale)||5,width:Number(c.naiWidth)||832,height:Number(c.naiHeight)||1216,negative_prompt:negativeOverride??c.negative??'',decrisper:false,variety_boost:false,sm:false,sm_dyn:false,seed:-1};
+  if(vibeItem){const vibe=extractUsableVibe(vibeItem.raw);if(!vibe)throw new Error('所选 Vibe 没有可直接发送的参考图编码；请从智绘姬重新导出包含图片数据的设置文件。');payload.reference_image_multiple=[vibe.image];payload.reference_strength_multiple=[vibe.strength];payload.reference_information_extracted_multiple=[vibe.informationExtracted];if(vibe.normalize!==undefined)payload.normalize_reference_strength=vibe.normalize;}
   if(naiModel.includes('nai-diffusion-5'))payload.use_new_shared_trial=true;
   res=await fetch('/api/novelai/generate-image',{method:'POST',headers:getRequestHeaders(window.token),body:JSON.stringify(payload)});
   raw=await res.text();
@@ -52,6 +53,37 @@ async function requestImage(prompt, negativeOverride){
  }
  if(typeof url!=='string'||!url)throw new Error('响应中没有可识别的图片');
  return url;
+}
+function extractUsableVibe(raw){
+ const imageKeys=/^(?:image|imageData|image_data|referenceImage|reference_image|referenceImageData|reference_image_data|vibeImage|vibe_image|base64|imageBase64|image_base64|data)$/i;
+ const seen=new WeakSet();let found='';
+ const walk=(value,key='')=>{
+  if(found||value==null)return;
+  if(typeof value==='string'){
+   const v=value.trim();
+   if(/^data:image\\/[^;]+;base64,/i.test(v)){found=v.replace(/^data:image\\/[^;]+;base64,/i,'');return;}
+   if(imageKeys.test(key)&&/^[A-Za-z0-9+/]+={0,2}$/.test(v)&&v.length>160){found=v;return;}
+   return;
+  }
+  if(typeof value!=='object'||seen.has(value))return;seen.add(value);
+  if(Array.isArray(value)){for(const item of value)walk(item,key);return;}
+  for(const [k,v] of Object.entries(value))walk(v,k);
+ };
+ walk(raw);
+ if(!found)return null;
+ const serialized=safeMigrationStringify(raw)||'';
+ const readNumber=(re,fallback)=>{const m=serialized.match(re);return m?Number(m[1]):fallback;};
+ const strength=readNumber(/"(?:reference_strength|referenceStrength|strength)"\\s*:\\s*([0-9.]+)/i,0.6);
+ const informationExtracted=readNumber(/"(?:reference_information_extracted|referenceInformationExtracted|information_extracted|informationExtracted|info_extracted)"\\s*:\\s*([0-9.]+)/i,0.7);
+ const norm=serialized.match(/"normalize_reference_strength"\\s*:\\s*(true|false)/i);
+ return {image:found,strength,informationExtracted,normalize:norm?norm[1]==='true':undefined};
+}
+function renderActiveVibes(){
+ const select=$('#ql-active-vibe');if(!select)return;
+ const prior=String(cfg().activeVibeIndex??-1);
+ select.innerHTML='<option value="-1">不使用 Vibe</option>'+cfg().vibes.map((v,i)=>'<option value="'+i+'">'+esc(v.name||('Vibe '+(i+1)))+(v.hasPayload?' · 检测到编码':' · 需检查资源')+'</option>').join('');
+ select.value=cfg().vibes[Number(prior)]?prior:'-1';
+ select.onchange=()=>{cfg().activeVibeIndex=Number(select.value);save();};
 }
 function saveCleanImage(src,filename){
  if(!src)return;
@@ -310,7 +342,7 @@ function html(){return `<section id="qinghui-lite-panel">
 <label>模型</label><input id="ql-model" placeholder="gpt-image-1">
 <div class="ql-row"><div><label>尺寸</label><select id="ql-size"><option>1024x1024</option><option>1536x1024</option><option>1024x1536</option></select></div><div><label>质量</label><select id="ql-quality"><option>low</option><option selected>medium</option><option>high</option></select></div></div>
 </div><div id="ql-nai-settings" hidden><label>NovelAI 模型</label><input id="ql-nai-model" value="nai-diffusion-4-5-full"><div class="ql-row"><div><label>步数</label><input id="ql-nai-steps" type="number" min="1" max="50"></div><div><label>CFG Scale</label><input id="ql-nai-scale" type="number" min="1" max="20" step="0.5"></div></div><div class="ql-row"><div><label>宽度</label><select id="ql-nai-width"><option>512</option><option>640</option><option>768</option><option selected>832</option><option>1024</option></select></div><div><label>高度</label><select id="ql-nai-height"><option>512</option><option>640</option><option>768</option><option selected>1216</option><option>1024</option><option>1536</option></select></div></div><label>采样器</label><select id="ql-nai-sampler"><option value="k_euler_ancestral">Euler Ancestral</option><option value="k_euler">Euler</option><option value="k_dpmpp_2m">DPM++ 2M</option><option value="k_dpmpp_2s_ancestral">DPM++ 2S Ancestral</option></select><label>调度器</label><select id="ql-nai-scheduler"><option value="karras">Karras</option><option value="native">Native</option></select></div><button id="ql-save" class="menu_button">保存后端设置</button></div>
-<div class="ql-card"><h3>独立生图工作区</h3><label>完整正向提示词</label><textarea id="ql-prompt" placeholder="输入完整提示词"></textarea><label>负向提示词</label><textarea id="ql-negative" placeholder="可选"></textarea><button id="ql-generate" class="menu_button">生成一张</button><p id="ql-status" class="ql-muted" role="status"></p><div id="ql-result"></div></div>
+<div class="ql-card"><h3>独立生图工作区</h3><label for="ql-active-vibe">Vibe 参考（仅 NovelAI，需导入含图片编码的资源）</label><select id="ql-active-vibe"><option value="-1">不使用 Vibe</option></select><p class="ql-muted">导入的 Vibe 会显示在这里；如果只有名称或缓存引用，不能直接用于生成，需要先从智绘姬导出包含参考图数据的设置。</p><label>完整正向提示词</label><textarea id="ql-prompt" placeholder="输入完整提示词"></textarea><label>负向提示词</label><textarea id="ql-negative" placeholder="可选"></textarea><button id="ql-generate" class="menu_button">生成一张</button><p id="ql-status" class="ql-muted" role="status"></p><div id="ql-result"></div></div>
 <div class="ql-card"><h3>最近生成（本地记录）</h3><div id="ql-history"></div><button id="ql-clear" class="menu_button">清空记录</button></div>
 <div class="ql-card"><h3>提示词库</h3><div class="ql-row"><input id="ql-prompt-name" placeholder="名称"><input id="ql-prompt-category" placeholder="分类"></div><label>完整正向提示词</label><textarea id="ql-library-prompt" placeholder="保存完整提示词"></textarea><label>负向提示词</label><textarea id="ql-library-negative"></textarea><button id="ql-prompt-save" class="menu_button">保存提示词</button><div id="ql-prompts-list"></div></div>
 <div class="ql-card"><h3>角色库</h3><input id="ql-character-name" placeholder="角色名称"><label>固定外貌词</label><textarea id="ql-character-appearance"></textarea><button id="ql-character-save" class="menu_button">保存角色</button><div id="ql-characters-list"></div></div>
@@ -332,6 +364,7 @@ function renderLibrary(){
  if(presets)presets.innerHTML=(s.presets||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.positive)+'</p><button class="menu_button" data-preset-apply="'+i+'">应用</button><button class="menu_button" data-preset-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无预设</p>';
  if(vibes)vibes.innerHTML=(s.vibes||[]).map((v,i)=>'<div class="ql-record"><strong>'+esc(v.name||'未命名 Vibe')+'</strong><p>'+esc(v.hasPayload?'检测到疑似内嵌编码/图片内容':(v.hasRef?'检测到外部引用，需重新关联':'未识别到图片或编码字段'))+'</p><details><summary>查看迁移信息</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto">'+esc(JSON.stringify({sourcePath:v.sourcePath,hasPayload:v.hasPayload,hasRef:v.hasRef,raw:v.raw},null,2).slice(0,5000))+'</pre></details><button class="menu_button" data-vibe-delete="'+i+'">删除迁移项</button></div>').join('')||'<p class="ql-muted">暂无迁移的 Vibe 项目</p>';
  vibes?.querySelectorAll('[data-vibe-delete]').forEach(b=>b.onclick=()=>{if(!confirm('删除这条轻绘 Vibe 迁移记录？'))return;s.vibes.splice(+b.dataset.vibeDelete,1);save();renderLibrary();});
+ renderActiveVibes();
  prompts?.querySelectorAll('[data-prompt-load]').forEach(b=>b.onclick=()=>{const p=s.prompts[+b.dataset.promptLoad];$('#ql-prompt').value=p.prompt;$('#ql-negative').value=p.negative||'';read();status('已载入提示词：'+p.name);});
  prompts?.querySelectorAll('[data-prompt-edit]').forEach(b=>b.onclick=()=>{const p=s.prompts[+b.dataset.promptEdit];$('#ql-prompt-name').value=p.name||'';$('#ql-prompt-category').value=p.category||'';$('#ql-library-prompt').value=p.prompt||'';$('#ql-library-negative').value=p.negative||'';$('#ql-prompt-save').dataset.edit=String(+b.dataset.promptEdit);$('#ql-prompt-save').textContent='保存修改';});
   prompts?.querySelectorAll('[data-prompt-delete]').forEach(b=>b.onclick=()=>{s.prompts.splice(+b.dataset.promptDelete,1);save();renderLibrary();});
@@ -447,7 +480,7 @@ $('#ql-generate').onclick=async()=>{
  if(conf.provider!=='novelai'&&(!conf.endpoint||!conf.apiKey)){status('请填写 OpenAI 兼容 API 地址和 Key。');return;}
  busy=true;$('#ql-generate').disabled=true;$('#ql-result').replaceChildren();status('正在请求生图接口……');
  try{
-  const url=await requestImage(conf.prompt.trim(),conf.negative.trim());
+  const activeIndex=Number(conf.activeVibeIndex??-1);const activeVibe=activeIndex>=0?conf.vibes[activeIndex]:null;const url=await requestImage(conf.prompt.trim(),conf.negative.trim(),activeVibe);
   const img=document.createElement('img');img.alt='轻绘生成结果';img.src=url;$('#ql-result').append(img);
   conf.records.unshift({at:Date.now(),prompt:conf.prompt.trim(),negative:conf.negative.trim(),provider:conf.provider,model:conf.provider==='novelai'?conf.naiModel:conf.model,size:conf.provider==='novelai'?(conf.naiWidth+'x'+conf.naiHeight):conf.size,quality:conf.quality,dataUrl:url});
   conf.records=conf.records.slice(0,20);save();history();status('生成完成。记录已保存在酒馆扩展设置中。');
