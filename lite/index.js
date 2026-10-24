@@ -90,6 +90,55 @@ async function processLatestAssistantMessage(){
   }
  }
 }
+
+let statusbarObserver=null;
+let statusbarSerial=0;
+function parseStatusbarMarker(text){const match=String(text||'').match(/image###([\\s\\S]*?)###/);return match?.[1]?.trim()||'';}
+function renderStatusbarCard(frame,prompt,url,taskKey){
+ frame.replaceChildren();
+ const card=document.createElement('div');card.className='ql-statusbar-card';card.dataset.qlTask=taskKey;
+ const img=document.createElement('img');img.alt='轻绘状态栏画面';img.loading='eager';
+ const controls=document.createElement('div');controls.className='ql-statusbar-controls';
+ const prev=document.createElement('button');prev.type='button';prev.className='menu_button';prev.textContent='‹';
+ const count=document.createElement('span');count.textContent='1 / 1';
+ const next=document.createElement('button');next.type='button';next.className='menu_button';next.textContent='›';
+ const reroll=document.createElement('button');reroll.type='button';reroll.className='menu_button';reroll.textContent='再画一张';
+ controls.append(prev,count,next,reroll);card.append(img,controls);frame.append(card);
+ card._qlCandidates=[{url,at:Date.now()}];card._qlIndex=0;
+ const render=()=>{const list=card._qlCandidates;img.src=list[card._qlIndex].url;count.textContent=(card._qlIndex+1)+' / '+list.length;prev.disabled=card._qlIndex<=0;next.disabled=card._qlIndex>=list.length-1;};
+ prev.onclick=()=>{if(card._qlIndex>0){card._qlIndex--;render();}};
+ next.onclick=()=>{if(card._qlIndex<card._qlCandidates.length-1){card._qlIndex++;render();}};
+ reroll.onclick=async()=>{if(card.dataset.busy==='1')return;card.dataset.busy='1';reroll.disabled=true;const old=reroll.textContent;reroll.textContent='生成中';try{const fresh=await requestImage(prompt);card._qlCandidates.push({url:fresh,at:Date.now()});card._qlIndex=card._qlCandidates.length-1;render();storeChatRecord(fresh,prompt,taskKey,{source:'statusbar'});}catch(e){statusbarError(frame,prompt,taskKey,e);}finally{card.dataset.busy='0';reroll.disabled=false;reroll.textContent=old;}};
+ frame.classList.remove('scanning');frame.dataset.qlDone='1';render();
+}
+function statusbarError(frame,prompt,taskKey,error){
+ frame.replaceChildren();const note=document.createElement('div');note.className='ql-statusbar-error';
+ const text=document.createElement('span');text.textContent='轻绘生成失败：'+(error?.message||String(error))+' ';
+ const retry=document.createElement('button');retry.type='button';retry.className='menu_button';retry.textContent='点击重试';
+ retry.onclick=async()=>{retry.disabled=true;retry.textContent='生成中…';try{const url=await requestImage(prompt);renderStatusbarCard(frame,prompt,url,taskKey);storeChatRecord(url,prompt,taskKey,{source:'statusbar'});}catch(e){statusbarError(frame,prompt,taskKey,e);}};
+ note.append(text,retry);frame.append(note);
+}
+async function processStatusbarFrames(){
+ const frames=document.querySelectorAll('.shot-frame.scanning');
+ for(const frame of frames){
+  if(frame.dataset.qlBusy==='1'||frame.dataset.qlDone==='1')continue;
+  const prompt=parseStatusbarMarker(frame.textContent);
+  if(!prompt)continue;
+  frame.dataset.qlPrompt=prompt;frame.dataset.qlBusy='1';
+  const taskKey='statusbar:'+((getContext()?.chatId)||'chat')+':'+(frame.dataset.qlTaskId||(frame.dataset.qlTaskId=''+(++statusbarSerial)));
+  frame.textContent='轻绘：正在生成画面…';
+  try{const url=await requestImage(prompt);renderStatusbarCard(frame,prompt,url,taskKey);storeChatRecord(url,prompt,taskKey,{source:'statusbar'});}
+  catch(e){statusbarError(frame,prompt,taskKey,e);}
+  finally{frame.dataset.qlBusy='0';}
+ }
+}
+function observeStatusbarFrames(){
+ if(statusbarObserver)return;
+ statusbarObserver=new MutationObserver(()=>{processStatusbarFrames().catch(e=>console.warn('[轻绘 Lite] 状态栏触发失败',e));});
+ statusbarObserver.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class']});
+ processStatusbarFrames().catch(e=>console.warn('[轻绘 Lite] 状态栏触发失败',e));
+}
+
 function save(){ saveSettingsDebounced(); }
 function html(){return `<section id="qinghui-lite-panel">
 <div class="ql-card"><h3>轻绘 Lite · 测试版</h3><p class="ql-muted">独立工作区支持 GPT / OpenAI 兼容接口和酒馆已配置的 NovelAI 连接。状态栏目标容器精准回填尚未接通。</p>
@@ -124,8 +173,9 @@ $('#ql-clear').onclick=()=>{if(confirm('清空轻绘本地生成记录？不会�
 jQuery(()=>{
  const mount=$('#extensions_settings2')||$('#extensions_settings');
  if(mount&&!$('#qinghui-lite-panel')){mount.insertAdjacentHTML('beforeend',html());init();}
+ observeStatusbarFrames();
  if(!eventSource||!event_types)return;
- const scheduleScan=()=>setTimeout(()=>{processLatestAssistantMessage().catch(e=>console.warn('[轻绘 Lite] 自动触发失败',e));},100);
+ const scheduleScan=()=>setTimeout(()=>{processLatestAssistantMessage().catch(e=>console.warn('[轻绘 Lite] 自动触发失败',e));processStatusbarFrames().catch(e=>console.warn('[轻绘 Lite] 状态栏触发失败',e));},100);
  if(event_types.GENERATION_ENDED)eventSource.on(event_types.GENERATION_ENDED,scheduleScan);
  if(event_types.MESSAGE_SWIPED)eventSource.on(event_types.MESSAGE_SWIPED,scheduleScan);
  if(event_types.CHAT_CHANGED)eventSource.on(event_types.CHAT_CHANGED,()=>{autoTasks.clear();});
