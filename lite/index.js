@@ -132,26 +132,32 @@ const statusbarObservedDocs=new WeakSet();
 let statusbarSerial=0;
 function parseStatusbarMarker(text){const match=String(text||'').match(/image###([\s\S]*?)###/);return match?.[1]?.trim()||'';}
 function renderStatusbarCard(frame,prompt,url,taskKey){
- frame.replaceChildren();
- const card=document.createElement('div');card.className='ql-statusbar-card';card.dataset.qlTask=taskKey;card.style.cssText='position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#000;';
- const img=document.createElement('img');img.alt='轻绘状态栏画面';img.loading='eager';img.style.cssText='display:block;width:100%;height:100%;object-fit:contain;';
- const controls=document.createElement('div');controls.className='ql-statusbar-controls';controls.style.cssText='position:absolute;left:0;right:0;bottom:4px;z-index:8;display:flex;align-items:center;justify-content:center;gap:4px;opacity:.92;';
- const prev=document.createElement('button');prev.type='button';prev.className='menu_button';prev.textContent='‹';
- const count=document.createElement('span');count.textContent='1 / 1';count.style.cssText='color:#fff;font-size:11px;text-shadow:0 1px 3px #000;padding:0 4px;';
- const next=document.createElement('button');next.type='button';next.className='menu_button';next.textContent='›';
- const reroll=document.createElement('button');reroll.type='button';reroll.className='menu_button';reroll.textContent='再画一张';
- controls.append(prev,count,next,reroll);card.append(img,controls);frame.append(card);
- card._qlCandidates=[{url,at:Date.now()}];card._qlIndex=0;
- const render=()=>{const list=card._qlCandidates;img.src=list[card._qlIndex].url;count.textContent=(card._qlIndex+1)+' / '+list.length;prev.disabled=card._qlIndex<=0;next.disabled=card._qlIndex>=list.length-1;};
- const step=delta=>{const nextIndex=card._qlIndex+delta;if(nextIndex>=0&&nextIndex<card._qlCandidates.length){card._qlIndex=nextIndex;render();}};
- prev.onclick=()=>step(-1);
- next.onclick=()=>step(1);
- let touchX=0,touchY=0;
- img.addEventListener('touchstart',e=>{const t=e.changedTouches[0];touchX=t.clientX;touchY=t.clientY;},{passive:true});
- img.addEventListener('touchend',e=>{const t=e.changedTouches[0],dx=t.clientX-touchX,dy=t.clientY-touchY;if(Math.abs(dx)>42&&Math.abs(dx)>Math.abs(dy)*1.25)step(dx<0?1:-1);},{passive:true});
- img.addEventListener('contextmenu',e=>{e.preventDefault();saveCleanImage(img.src,'qinghui-'+Date.now()+'.png');});
- reroll.onclick=async()=>{if(card.dataset.busy==='1')return;card.dataset.busy='1';reroll.disabled=true;const old=reroll.textContent;reroll.textContent='生成中';try{const fresh=await requestImage(prompt);card._qlCandidates.push({url:fresh,at:Date.now()});card._qlIndex=card._qlCandidates.length-1;render();storeChatRecord(fresh,prompt,taskKey,{source:'statusbar'});}catch(e){statusbarError(frame,prompt,taskKey,e);}finally{card.dataset.busy='0';reroll.disabled=false;reroll.textContent=old;}};
- frame.classList.remove('scanning');frame.dataset.qlDone='1';render();
+ let card=frame.querySelector('.ql-statusbar-card');
+ if(!card||card.dataset.qlTask!==taskKey){
+  frame.replaceChildren();
+  card=document.createElement('div');card.className='ql-statusbar-card';card.dataset.qlTask=taskKey;
+  card.style.cssText='position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#000;';
+  const img=document.createElement('img');img.alt='轻绘状态栏画面';img.loading='eager';img.style.cssText='display:block;width:100%;height:100%;object-fit:contain;';
+  const controls=document.createElement('div');controls.className='ql-statusbar-controls';controls.style.cssText='position:absolute;left:0;right:0;bottom:4px;z-index:8;display:flex;align-items:center;justify-content:center;gap:4px;opacity:.92;';
+  const prev=document.createElement('button');prev.type='button';prev.className='menu_button';prev.textContent='‹';
+  const count=document.createElement('span');count.className='ql-statusbar-count';count.textContent='1 / 1';count.style.cssText='color:#fff;font-size:11px;text-shadow:0 1px 3px #000;padding:0 4px;';
+  const next=document.createElement('button');next.type='button';next.className='menu_button';next.textContent='›';
+  const reroll=document.createElement('button');reroll.type='button';reroll.className='menu_button';reroll.textContent='再画一张';
+  controls.append(prev,count,next,reroll);card.append(img,controls);frame.append(card);
+  card._qlCandidates=[];card._qlIndex=0;card._qlPrompt=prompt;
+  const render=()=>{const list=card._qlCandidates;if(!list.length)return;img.src=list[card._qlIndex].url;count.textContent=(card._qlIndex+1)+' / '+list.length;prev.disabled=card._qlIndex<=0;next.disabled=card._qlIndex>=list.length-1;};
+  const step=delta=>{const nextIndex=card._qlIndex+delta;if(nextIndex>=0&&nextIndex<card._qlCandidates.length){card._qlIndex=nextIndex;render();}};
+  prev.onclick=()=>step(-1);next.onclick=()=>step(1);
+  let touchX=0,touchY=0;
+  img.addEventListener('touchstart',e=>{const t=e.changedTouches[0];touchX=t.clientX;touchY=t.clientY;},{passive:true});
+  img.addEventListener('touchend',e=>{const t=e.changedTouches[0],dx=t.clientX-touchX,dy=t.clientY-touchY;if(Math.abs(dx)>42&&Math.abs(dx)>Math.abs(dy)*1.25)step(dx<0?1:-1);},{passive:true});
+  img.addEventListener('contextmenu',e=>{e.preventDefault();saveCleanImage(img.src,'qinghui-'+Date.now()+'.png');});
+  reroll.onclick=async()=>{if(card.dataset.busy==='1')return;card.dataset.busy='1';reroll.disabled=true;const old=reroll.textContent;reroll.textContent='生成中';try{const fresh=await requestImage(card._qlPrompt);card._qlCandidates.push({url:fresh,at:Date.now()});card._qlIndex=card._qlCandidates.length-1;render();storeChatRecord(fresh,card._qlPrompt,taskKey,{source:'statusbar'});}catch(e){statusbarError(frame,card._qlPrompt,taskKey,e);}finally{card.dataset.busy='0';reroll.disabled=false;reroll.textContent=old;}};
+  card._qlRender=render;
+ }
+ if(!card._qlCandidates.some(item=>item.url===url)){card._qlCandidates.push({url,at:Date.now()});card._qlIndex=card._qlCandidates.length-1;}
+ card._qlRender?.();
+ frame.classList.remove('scanning');frame.dataset.qlDone='1';
 }
 function statusbarError(frame,prompt,taskKey,error){
  frame.replaceChildren();const note=document.createElement('div');note.className='ql-statusbar-error';
