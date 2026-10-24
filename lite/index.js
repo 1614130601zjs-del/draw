@@ -24,7 +24,7 @@ async function requestImage(prompt, negativeOverride, vibeItem=null){
    const vibes=Array.isArray(vibeItem.entries)&&vibeItem.entries.length
     ?vibeItem.entries.filter(item=>typeof item.image==='string'&&item.image.trim()).map(item=>({image:item.image,strength:Number(item.strength??0.6),informationExtracted:Number(item.informationExtracted??1)}))
     :(()=>{const one=extractUsableVibe(vibeItem.raw);return one?[one]:[];})();
-   if(!vibes.length)throw new Error('所选 Vibe 没有可用的图片数据，请重新导入智绘姬完整导出 JSON。');
+   if(!vibes.length)throw new Error('所选 Vibe 的原始数据已保留，但尚未识别出可安全发送给 NovelAI 的编码图像；不会将辨识用 PNG 当作 Vibe 输入。');
    payload.reference_image_multiple=vibes.map(v=>v.image);
    payload.reference_strength_multiple=vibes.map(v=>v.strength);
    payload.reference_information_extracted_multiple=vibes.map(v=>v.informationExtracted);
@@ -89,7 +89,7 @@ function extractUsableVibe(raw){
 function renderActiveVibes(){
  const select=$('#ql-active-vibe');if(!select)return;
  const prior=String(cfg().activeVibeIndex??-1);
- select.innerHTML='<option value="-1">不使用 Vibe</option>'+cfg().vibes.map((v,i)=>'<option value="'+i+'">'+esc(v.name||('Vibe '+(i+1)))+(v.hasPayload?' · 检测到编码':' · 需检查资源')+'</option>').join('');
+ select.innerHTML='<option value="-1">不使用 Vibe</option>'+cfg().vibes.map((v,i)=>'<option value="'+i+'">'+esc(v.name||('Vibe '+(i+1)))+(v.hasPayload?' · 保留了疑似编码':' · 原始数据待核验')+'</option>').join('');
  select.value=cfg().vibes[Number(prior)]?prior:'-1';
  select.onchange=()=>{cfg().activeVibeIndex=Number(select.value);save();};
 }
@@ -370,7 +370,7 @@ function renderLibrary(){
  if(prompts)prompts.innerHTML=(s.prompts||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.category||'未分类')+' · '+esc((p.prompt||'').slice(0,100))+'</p><button class="menu_button" data-prompt-load="'+i+'">载入</button><button class="menu_button" data-prompt-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无提示词</p>';
  if(chars)chars.innerHTML=(s.characters||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.appearance)+'</p><button class="menu_button" data-character-apply="'+i+'">追加外貌词</button><button class="menu_button" data-character-edit="'+i+'">编辑</button><button class="menu_button" data-character-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无角色</p>';
  if(presets)presets.innerHTML=(s.presets||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.positive)+'</p><button class="menu_button" data-preset-apply="'+i+'">应用</button><button class="menu_button" data-preset-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无预设</p>';
- if(vibes)vibes.innerHTML=(s.vibes||[]).map((v,i)=>'<div class="ql-record"><strong>'+esc(v.name||'未命名 Vibe')+'</strong><p>'+esc(Array.isArray(v.entries)&&v.entries.length?'已导入 '+v.entries.length+' 张 Vibe 图片，强度与分组对应关系已保留':(v.hasPayload?'检测到疑似内嵌编码/图片内容':(v.hasRef?'检测到外部引用，需重新关联':'未识别到图片或编码字段')))+'</p><details><summary>查看迁移信息</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto">'+esc(JSON.stringify({sourcePath:v.sourcePath,hasPayload:v.hasPayload,hasRef:v.hasRef,groupName:v.groupName,entries:Array.isArray(v.entries)?v.entries.map(({image,previewImage,raw,...meta})=>({...meta,image:image?'[生图输入数据已保存，长度 '+String(image).length+' 字符]':'[未绑定生图输入]',previewImage:previewImage?'[仅供辨识的预览图已保留，长度 '+String(previewImage).length+' 字符]':'',raw:raw?'[原始 Vibe 数据已完整保留]':undefined})):undefined,raw:v.raw},null,2).slice(0,5000))+'</pre></details><button class="menu_button" data-vibe-delete="'+i+'">删除迁移项</button></div>').join('')||'<p class="ql-muted">暂无迁移的 Vibe 项目</p>';
+ if(vibes)vibes.innerHTML=(s.vibes||[]).map((v,i)=>'<div class="ql-record"><strong>'+esc(v.name||'未命名 Vibe')+'</strong><p>'+esc(Array.isArray(v.entries)&&v.entries.length?'已保留 '+v.entries.length+' 条 Vibe 原始记录；头像仅用于辨识，编码字段仍需核验':(v.hasPayload?'检测到疑似内嵌编码，尚未确认格式':(v.hasRef?'检测到外部引用，需重新关联':'未识别到图片或编码字段')))+'</p><details><summary>查看迁移信息</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto">'+esc(JSON.stringify({sourcePath:v.sourcePath,hasPayload:v.hasPayload,hasRef:v.hasRef,groupName:v.groupName,entries:Array.isArray(v.entries)?v.entries.map(({image,previewImage,raw,...meta})=>({...meta,image:image?'[生图输入数据已保存，长度 '+String(image).length+' 字符]':'[未绑定生图输入]',previewImage:previewImage?'[仅供辨识的预览图已保留，长度 '+String(previewImage).length+' 字符]':'',raw:raw?'[原始 Vibe 数据已完整保留]':undefined})):undefined,raw:v.raw},null,2).slice(0,5000))+'</pre></details><button class="menu_button" data-vibe-delete="'+i+'">删除迁移项</button></div>').join('')||'<p class="ql-muted">暂无迁移的 Vibe 项目</p>';
  vibes?.querySelectorAll('[data-vibe-delete]').forEach(b=>b.onclick=()=>{if(!confirm('删除这条轻绘 Vibe 迁移记录？'))return;s.vibes.splice(+b.dataset.vibeDelete,1);save();renderLibrary();});
  renderActiveVibes();
  prompts?.querySelectorAll('[data-prompt-load]').forEach(b=>b.onclick=()=>{const p=s.prompts[+b.dataset.promptLoad];$('#ql-prompt').value=p.prompt;$('#ql-negative').value=p.negative||'';read();status('已载入提示词：'+p.name);});
