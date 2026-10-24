@@ -92,7 +92,7 @@ async function processLatestAssistantMessage(){
 }
 function save(){ saveSettingsDebounced(); }
 function html(){return `<section id="qinghui-lite-panel">
-<div class="ql-card"><h3>轻绘 Lite · 测试版</h3><p class="ql-muted">独立工作区可先测试 GPT / OpenAI 兼容生图。酒馆消息自动触发、NovelAI 与状态栏精准注入尚未接通。</p>
+<div class="ql-card"><h3>轻绘 Lite · 测试版</h3><p class="ql-muted">独立工作区支持 GPT / OpenAI 兼容接口和酒馆已配置的 NovelAI 连接。状态栏目标容器精准回填尚未接通。</p>
 <label>生图后端</label><select id="ql-provider"><option value="openai">GPT / OpenAI 兼容接口</option><option value="novelai">NovelAI（使用酒馆已配置的连接）</option></select>
 <div id="ql-openai-settings"><label>API 地址</label><input id="ql-endpoint" placeholder="https://api.openai.com/v1">
 <label>API Key</label><input id="ql-key" type="password" autocomplete="off" placeholder="不会写入 GitHub">
