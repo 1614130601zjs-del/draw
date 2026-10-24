@@ -220,20 +220,38 @@ function renderStatusbarCard(frame,prompt,url,taskKey){
 function statusbarError(frame,prompt,taskKey,error){
  const existingCard=frame.querySelector('.ql-statusbar-card');
  const note=document.createElement('div');note.className='ql-statusbar-error';
- const text=document.createElement('span');text.textContent='轻绘生成失败：'+(error?.message||String(error))+' ';
+ note.style.cssText='position:absolute;inset:0;z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:12px;background:rgba(0,0,0,.78);color:#fff;text-align:center;font-size:13px;';
+ const text=document.createElement('span');text.textContent='轻绘生成失败：'+(error?.message||String(error));
  const retry=document.createElement('button');retry.type='button';retry.className='menu_button';retry.textContent='点击重试';
- retry.onclick=async()=>{const accepted=triggerRegistry.begin(taskKey,{prompt,source:'statusbar-retry'});if(!accepted.accepted)return;triggerRegistry.markRunning(taskKey);retry.disabled=true;retry.textContent='生成中…';try{const url=await requestImage(prompt);const card=frame.querySelector('.ql-statusbar-card');if(card&&typeof card._qlAdasync function processStatusbarFrames(){
+ retry.onclick=async()=>{
+  const accepted=triggerRegistry.begin(taskKey,{prompt,source:'statusbar-retry'});
+  if(!accepted.accepted)return;
+  triggerRegistry.markRunning(taskKey);retry.disabled=true;retry.textContent='生成中…';
+  try{
+   const url=await requestImage(prompt);
+   note.remove();
+   const card=frame.querySelector('.ql-statusbar-card');
+   if(card&&typeof card._qlAddCandidate==='function')card._qlAddCandidate(url);
+   else renderStatusbarCard(frame,prompt,url,taskKey);
+   storeChatRecord(url,prompt,taskKey,{source:'statusbar'});
+   triggerRegistry.markSucceeded(taskKey,taskKey+':candidate:'+Date.now());
+  }catch(e){
+   triggerRegistry.markFailed(taskKey,e?.message||String(e));
+   text.textContent='轻绘生成失败：'+(e?.message||String(e));
+   retry.disabled=false;retry.textContent='点击重试';
+  }
+ };
+ note.append(text,retry);frame.append(note);
+}
+async function processStatusbarFrames(){
  const docs=[document];
  document.querySelectorAll('iframe').forEach(iframe=>{try{if(iframe.contentDocument)docs.push(iframe.contentDocument);}catch{}});
  const frames=docs.flatMap(doc=>Array.from(doc.querySelectorAll('[class~="scanning"]')).filter(frame=>{
   const prompt=statusbarPromptForTarget(frame);
   if(!prompt)return false;
-  // If nested scanning nodes describe the same marker, let the innermost target own it.
   return !Array.from(frame.querySelectorAll('[class~="scanning"]')).some(child=>statusbarPromptForTarget(child)===prompt);
  }));
  for(const frame of frames){
-  // Generic statusbar contract: a scanning target exposes image###prompt### in its text
-  // or a data-tag attribute on itself, descendants, or its nearest tagged wrapper.
   const prompt=statusbarPromptForTarget(frame);
   if(!prompt)continue;
   if(frame.dataset.qlPrompt!==prompt){
@@ -247,20 +265,23 @@ function statusbarError(frame,prompt,taskKey,error){
   const accepted=triggerRegistry.begin(taskKey,{prompt,source:'statusbar'});
   if(!accepted.accepted){frame.dataset.qlBusy='0';continue;}
   triggerRegistry.markRunning(taskKey);
-  const loading=document.createElement('div');loading.className='ql-statusbar-loading';loading.textContent='轻绘：正在生成画面…';
+  const loading=(frame.ownerDocument||document).createElement('div');
+  loading.className='ql-statusbar-loading';
+  loading.textContent='轻绘：正在生成画面…';
   loading.style.cssText='position:absolute;inset:0;z-index:7;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);color:#fff;font-size:13px;';
   if(getComputedStyle(frame).position==='static')frame.style.position='relative';
   frame.append(loading);
-  try{const url=await requestImage(prompt);loading.remove();renderStatusbarCard(frame,prompt,url,taskKey);storeChatRecord(url,prompt,taskKey,{source:'statusbar'});triggerRegistry.markSucceeded(taskKey,taskKey+':candidate:'+Date.now());}
-  catch(e){triggerRegistry.markFailed(taskKey,e?.message||String(e));loading.remove();statusbarError(frame,prompt,taskKey,e);}
-  finally{frame.dataset.qlBusy='0';}
-}
-stify-content:center;background:rgba(0,0,0,.72);color:#fff;font-size:13px;';
-  if(getComputedStyle(frame).position==='static')frame.style.position='relative';
-  frame.append(loading);
-  try{const url=await requestImage(prompt);loading.remove();renderStatusbarCard(frame,prompt,url,taskKey);storeChatRecord(url,prompt,taskKey,{source:'statusbar'});triggerRegistry.markSucceeded(taskKey,taskKey+':candidate:'+Date.now());}
-  catch(e){triggerRegistry.markFailed(taskKey,e?.message||String(e));loading.remove();statusbarError(frame,prompt,taskKey,e);}
-  finally{frame.dataset.qlBusy='0';}
+  try{
+   const url=await requestImage(prompt);
+   loading.remove();
+   renderStatusbarCard(frame,prompt,url,taskKey);
+   storeChatRecord(url,prompt,taskKey,{source:'statusbar'});
+   triggerRegistry.markSucceeded(taskKey,taskKey+':candidate:'+Date.now());
+  }catch(e){
+   triggerRegistry.markFailed(taskKey,e?.message||String(e));
+   loading.remove();
+   statusbarError(frame,prompt,taskKey,e);
+  }finally{frame.dataset.qlBusy='0';}
  }
 }
 function observeStatusbarFrames(){
