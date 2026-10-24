@@ -1,39 +1,42 @@
 # 轻绘 Lite
 
-轻绘是基于现有 SillyTavern 生图扩展精简出的移动优先版本。
+轻绘 Lite 是独立于仓库根目录原插件的精简版 SillyTavern 扩展，优先适配手机端。
 
-> 当前阶段：UI / 模块骨架。这里不代表真实生图 API、酒馆事件、状态栏回填或持久化已经接通。所有演示数据仅用于验证导航和布局。
+## 当前可安装测试范围（v0.1.0）
 
-## 页面模块
+- 可作为第三方扩展加载，在扩展设置区域显示独立生图面板。
+- OpenAI 兼容 `/images/generations` 接口：配置地址、API Key、模型、尺寸与质量。
+- 手动输入完整提示词，一次请求一张图片。
+- 生成记录保存在 SillyTavern 扩展设置中，可载入历史提示词、清空记录。
+- 使用酒馆主题变量，样式限定在轻绘面板内。
 
-- 工作台：手动 Roll 的独立工作区
-- 预设：画师串、Vibe、默认参数
-- 角色库：角色外貌词与预设绑定
-- 提示词库：已写好的完整提示词、分类、例图
-- 图片缓存：缩略图列表与选择/删除交互骨架
-- 基础设置：插件外观、图片包裹、按钮、GPT/OpenAI、NovelAI、LLM API
-- 聊天触发：普通聊天支持流式自动 / 手动按钮；状态栏默认自动并保留手动入口
-- 图片卡片：同一触发任务的结果可左右切换；每次只生成一张；长按保存输出干净图片
+**目前尚未完成：** NovelAI 请求、`image###提示词###` 自动触发与隐藏、酒馆消息事件绑定、状态栏目标容器回填、预设/角色库/完整提示词库/Vibe 导入、独立图片缓存图库。这个版本适合先确认能否安装、面板是否正常、你的 OpenAI 兼容接口是否可用，不代表完整功能已经完成。
+
+## 安装到 SillyTavern（Termux）
+
+在酒馆扩展目录执行以下命令。它会只下载 `lite/` 目录中的文件，不动仓库根目录的原插件：
+
+```bash
+cd ~/SillyTavern/data/default-user/extensions
+mkdir -p qinghui-lite
+cd qinghui-lite
+curl -fL https://raw.githubusercontent.com/1614130601zjs-del/draw/feature/lite-image-core/lite/manifest.json -o manifest.json
+curl -fL https://raw.githubusercontent.com/1614130601zjs-del/draw/feature/lite-image-core/lite/index.js -o index.js
+curl -fL https://raw.githubusercontent.com/1614130601zjs-del/draw/feature/lite-image-core/lite/extension.css -o extension.css
+```
+
+然后刷新酒馆页面，在扩展设置里找到“轻绘 Lite”。如果目录已存在，请先备份或确认是轻绘目录，再覆盖文件。
+
+## API 配置提示
+
+- API 地址填写供应商提供的 OpenAI 兼容 API 根地址，通常以 `/v1` 结尾；扩展会在其后拼接 `/images/generations`。
+- API Key 仅存于当前酒馆扩展设置，不写入仓库。
+- 部分服务商不允许浏览器跨域请求（CORS）；如果请求被浏览器拦截，需要后续增加酒馆代理适配或使用供应商支持的跨域配置。
+- 目前按 OpenAI 图像生成响应中的 `data[0].b64_json`、`data[0].url` 或常见 `images[0]` 解析结果。不同供应商的请求体/响应体若不兼容，需要单独适配。
 
 ## 目录
 
-- `index.html`：页面入口与各模块容器
-- `style.css`：移动优先、主题变量适配样式
-- `app.js`：页面导航和演示交互
-
-## 下一阶段接线顺序
-
-1. 对照原扩展实际源码确认 SillyTavern 事件、消息生命周期、`image###提示词###` 解析与结果插入调用链。
-2. 抽取 GPT/OpenAI 与 NovelAI 的真实请求实现，保持后端参数隔离。
-3. 实现去重的触发任务状态机，覆盖流式更新、手动触发、重 Roll 与取消。
-4. 对接状态栏原容器回填，不能用全局查找任意图片的方式关联结果。
-5. 使用 SillyTavern 本地持久化 API 保存原图、干净展示图和生成记录。
-6. 最后接入角色、预设、Vibe、提示词库与缓存管理。
-
-## 约束
-
-- 不改写仓库根目录的原插件入口；轻绘骨架放在独立目录。
-- 不在前端代码、提交或日志中写入 API 密钥。
-- 手机优先，按钮触控尺寸和可滚动标签栏优先。
-- 每次只请求生成一张；新结果追加到同一组候选图，不覆盖旧图。
-- 长按/导出图片使用去除生成元数据的展示图；内部记录独立保存。
+- `index.html` / `style.css` / `app.js`：独立浏览器 UI 原型，方便快速查看完整页面导航与模块布局。
+- `manifest.json` / `index.js` / `extension.css`：可安装的 SillyTavern 测试扩展。
+- `trigger-core.js`：独立的触发标记解析与任务状态核心，目前尚未绑定酒馆消息事件。
+- `ARCHITECTURE.md` / `TRIGGER-CORE.md`：模块边界和触发状态说明。
