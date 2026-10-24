@@ -41,8 +41,13 @@ async function requestImage(prompt, negativeOverride){
  try{data=JSON.parse(raw);}catch{throw new Error('接口返回非 JSON（HTTP '+res.status+'）');}
  if(!res.ok)throw new Error(data?.error?.message||'HTTP '+res.status);
  const item=data?.data?.[0];let url=item?.b64_json?'data:image/png;base64,'+item.b64_json:item?.url;
- if(!url&&data?.images?.[0]){const v=data.images[0];url=/^(data:|https?:)/.test(v)?v:'data:image/png;base64,'+v;}
- if(!url)throw new Error('响应中没有可识别的图片');
+ const candidates=[data?.images?.[0],data?.output?.[0]];
+ for(const v of candidates){
+  if(url||v==null)continue;
+  if(typeof v==='string')url=/^(data:|https?:)/.test(v)?v:'data:image/png;base64,'+v;
+  else if(typeof v==='object')url=v.url||(v.b64_json?'data:image/png;base64,'+v.b64_json:null)||(v.image?'data:image/png;base64,'+v.image:null);
+ }
+ if(typeof url!=='string'||!url)throw new Error('响应中没有可识别的图片');
  return url;
 }
 function saveCleanImage(src,filename){
