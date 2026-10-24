@@ -161,8 +161,17 @@ async function processLatestAssistantMessage(){
 
 let statusbarObserver=null;
 const statusbarObservedDocs=new WeakSet();
-let statusbarSerial=0;
-function parseStatusbarMarker(text){const match=String(text||'').match(/image###([\s\S]*?)###/);return match?.[1]?.trim()||'';}
+function parseStatusbarMarker(text){const match=String(text||'').match(/image###([\\s\\S]*?)###/);return match?.[1]?.trim()||'';}
+function statusbarTaskKey(frame,prompt,doc){
+ const message=frame.closest('.mes[mesid]')||frame.closest('.mes');
+ const messageId=message?.getAttribute('mesid')||message?.dataset?.mesid||'no-message-id';
+ const scope=message||doc;
+ const targets=Array.from(scope.querySelectorAll('.dy-screen #shot-frame'));
+ const ordinal=Math.max(0,targets.indexOf(frame));
+ let hash=2166136261;
+ for(let i=0;i<prompt.length;i++){hash^=prompt.charCodeAt(i);hash=Math.imul(hash,16777619);}
+ return 'statusbar:'+String(getContext()?.chatId||'chat')+':'+messageId+':'+ordinal+':'+(hash>>>0).toString(36);
+}
 function renderStatusbarCard(frame,prompt,url,taskKey){
  let card=frame.querySelector('.ql-statusbar-card');
  if(!card||card.dataset.qlTask!==taskKey){
@@ -205,21 +214,23 @@ function statusbarError(frame,prompt,taskKey,error){
 async function processStatusbarFrames(){
  const docs=[document];
  document.querySelectorAll('iframe').forEach(iframe=>{try{if(iframe.contentDocument)docs.push(iframe.contentDocument);}catch{}});
- const frames=docs.flatMap(doc=>Array.from(doc.querySelectorAll('.shot-frame.scanning')));
+ const frames=docs.flatMap(doc=>Array.from(doc.querySelectorAll('.dy-screen #shot-frame.scanning')));
  for(const frame of frames){
   // 先读取当前提示词，再判断是否已处理：正则重渲染复用同一个 DOM 时，
   // 新提示词必须建立新任务，不能被旧的 qlDone 标记永久挡住。
-  const prompt=parseStatusbarMarker(frame.textContent);
+  // 只接入抖音正则明确创建的 #shot > #shot-frame，不扫描页面其他插件的图片框。
+  const shot=frame.closest('#shot');
+  if(!shot||!shot.closest('.dy-screen'))continue;
+  const prompt=parseStatusbarMarker(frame.textContent)||parseStatusbarMarker(shot.getAttribute('data-tag'));
   if(!prompt)continue;
   if(frame.dataset.qlPrompt!==prompt){
    frame.dataset.qlPrompt=prompt;
    frame.dataset.qlDone='';
-   frame.dataset.qlTaskId=''+(++statusbarSerial);
    frame.querySelectorAll('.ql-statusbar-card,.ql-statusbar-error,.ql-statusbar-loading').forEach(el=>el.remove());
   }
   if(frame.dataset.qlBusy==='1'||frame.dataset.qlDone==='1')continue;
   frame.dataset.qlBusy='1';
-  const taskKey='statusbar:'+((getContext()?.chatId)||'chat')+':'+frame.dataset.qlTaskId;
+  const taskKey=statusbarTaskKey(frame,prompt,doc);
   const accepted=triggerRegistry.begin(taskKey,{prompt,source:'statusbar',frameTaskId:frame.dataset.qlTaskId});
   if(!accepted.accepted){frame.dataset.qlBusy='0';continue;}
   triggerRegistry.markRunning(taskKey);
