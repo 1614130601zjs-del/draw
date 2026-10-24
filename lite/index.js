@@ -92,6 +92,7 @@ async function processLatestAssistantMessage(){
 }
 
 let statusbarObserver=null;
+const statusbarObservedDocs=new WeakSet();
 let statusbarSerial=0;
 function parseStatusbarMarker(text){const match=String(text||'').match(/image###([\\s\\S]*?)###/);return match?.[1]?.trim()||'';}
 function renderStatusbarCard(frame,prompt,url,taskKey){
@@ -119,7 +120,9 @@ function statusbarError(frame,prompt,taskKey,error){
  note.append(text,retry);frame.append(note);
 }
 async function processStatusbarFrames(){
- const frames=document.querySelectorAll('.shot-frame.scanning');
+ const docs=[document];
+ document.querySelectorAll('iframe').forEach(iframe=>{try{if(iframe.contentDocument)docs.push(iframe.contentDocument);}catch{}});
+ const frames=docs.flatMap(doc=>Array.from(doc.querySelectorAll('.shot-frame.scanning')));
  for(const frame of frames){
   if(frame.dataset.qlBusy==='1'||frame.dataset.qlDone==='1')continue;
   const prompt=parseStatusbarMarker(frame.textContent);
@@ -133,9 +136,19 @@ async function processStatusbarFrames(){
  }
 }
 function observeStatusbarFrames(){
- if(statusbarObserver)return;
- statusbarObserver=new MutationObserver(()=>{processStatusbarFrames().catch(e=>console.warn('[轻绘 Lite] 状态栏触发失败',e));});
- statusbarObserver.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class']});
+ const attach=doc=>{
+  if(!doc||statusbarObservedDocs.has(doc))return;
+  const target=doc.body||doc.documentElement;if(!target)return;
+  statusbarObservedDocs.add(doc);
+  const observer=new MutationObserver(()=>{attachFrames();processStatusbarFrames().catch(e=>console.warn('[轻绘 Lite] 状态栏触发失败',e));});
+  observer.observe(target,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class']});
+  if(doc===document)statusbarObserver=observer;
+ };
+ const attachFrames=()=>{
+  attach(document);
+  document.querySelectorAll('iframe').forEach(frame=>{try{attach(frame.contentDocument);}catch{}});
+ };
+ attachFrames();
  processStatusbarFrames().catch(e=>console.warn('[轻绘 Lite] 状态栏触发失败',e));
 }
 
