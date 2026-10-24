@@ -1,9 +1,10 @@
 import { extension_settings, saveSettingsDebounced } from '../../../extensions.js';
 import { eventSource, event_types } from '../../../script.js';
 import { getContext } from '../../../extensions.js';
+import { getRequestHeaders } from '../../../script.js';
 
 const EXT = 'qinghui_lite';
-const defaults = { provider:'openai', endpoint:'https://api.openai.com/v1', apiKey:'', model:'gpt-image-1', size:'1024x1024', quality:'medium', prompt:'', negative:'', records:[] };
+const defaults = { provider:'openai', endpoint:'https://api.openai.com/v1', apiKey:'', model:'gpt-image-1', size:'1024x1024', quality:'medium', naiModel:'nai-diffusion-4-5-full', naiSteps:28, naiScale:5, naiWidth:832, naiHeight:1216, naiSampler:'k_euler_ancestral', naiScheduler:'karras', prompt:'', negative:'', records:[] };
 const $ = (s, root=document) => root.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let busy=false;
@@ -12,7 +13,32 @@ const autoTasks = new Set();
 const markerRe = /image###([\s\S]*?)###/g;
 function markers(text){const out=[];markerRe.lastIndex=0;let m;while((m=markerRe.exec(text))!==null){if(m[1].trim())out.push({index:m.index,prompt:m[1].trim(),raw:m[0]});}return out;}
 function hideMarkersInTextNode(root){if(!root)return;const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())if(walker.currentNode.nodeValue?.includes('image###'))nodes.push(walker.currentNode);for(const node of nodes){node.nodeValue=node.nodeValue.replace(/image###[\s\S]*?###/g,'');}}
-async function requestImage(prompt){const c=cfg();if(!c.endpoint||!c.apiKey)throw new Error('请先在轻绘设置中填写 API 地址和 Key');const body={model:c.model,prompt,n:1,size:c.size};if(c.model.toLowerCase().includes('gpt-image'))body.quality=c.quality;const res=await fetch(c.endpoint.replace(/\/$/, '')+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.apiKey},body:JSON.stringify(body)});const raw=await res.text();let data;try{data=JSON.parse(raw);}catch{throw new Error('接口返回非 JSON（HTTP '+res.status+'）');}if(!res.ok)throw new Error(data?.error?.message||'HTTP '+res.status);const item=data?.data?.[0];let url=item?.b64_json?'data:image/png;base64,'+item.b64_json:item?.url;if(!url&&data?.images?.[0]){const v=data.images[0];url=/^(data:|https?:)/.test(v)?v:'data:image/png;base64,'+v;}if(!url)throw new Error('响应中没有可识别的图片');return url;}
+async function requestImage(prompt, negativeOverride){
+ const c=cfg();
+ let raw='',data=null,res;
+ if(c.provider==='novelai'){
+  const payload={prompt,model:c.naiModel||'nai-diffusion-4-5-full',sampler:c.naiSampler||'k_euler_ancestral',scheduler:c.naiScheduler||'karras',steps:Number(c.naiSteps)||28,scale:Number(c.naiScale)||5,width:Number(c.naiWidth)||832,height:Number(c.naiHeight)||1216,negative_prompt:negativeOverride??c.negative??'',seed:-1};
+  res=await fetch('/api/novelai/generate-image',{method:'POST',headers:getRequestHeaders(window.token),body:JSON.stringify(payload)});
+  raw=await res.text();
+  if(!res.ok)throw new Error('NovelAI 请求失败（HTTP '+res.status+'）：'+raw.slice(0,240));
+  try{data=JSON.parse(raw);}catch{}
+  let value=data?.images?.[0]??data?.image??raw.trim();
+  if(typeof value!=='string'||!value)throw new Error('NovelAI 响应中没有可识别的图片');
+  return /^(data:|https?:)/.test(value)?value:'data:image/png;base64,'+value.replace(/^data:image\\/[^;]+;base64,/,'');
+ }
+ if(!c.endpoint||!c.apiKey)throw new Error('请先在轻绘设置中填写 OpenAI 兼容 API 地址和 Key');
+ const body={model:c.model,prompt,n:1,size:c.size};
+ if(c.model.toLowerCase().includes('gpt-image'))body.quality=c.quality;
+ if((negativeOverride??c.negative??'').trim())body.negative_prompt=(negativeOverride??c.negative).trim();
+ res=await fetch(c.endpoint.replace(/\\/$/, '')+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.apiKey},body:JSON.stringify(body)});
+ raw=await res.text();
+ try{data=JSON.parse(raw);}catch{throw new Error('接口返回非 JSON（HTTP '+res.status+'）');}
+ if(!res.ok)throw new Error(data?.error?.message||'HTTP '+res.status);
+ const item=data?.data?.[0];let url=item?.b64_json?'data:image/png;base64,'+item.b64_json:item?.url;
+ if(!url&&data?.images?.[0]){const v=data.images[0];url=/^(data:|https?:)/.test(v)?v:'data:image/png;base64,'+v;}
+ if(!url)throw new Error('响应中没有可识别的图片');
+ return url;
+}
 function addMessageImage(host,url,prompt,taskKey,recordMeta={}) {
  if(!host)return;
  let card=[...host.querySelectorAll('.ql-chat-image')].find(el=>el.dataset.qlTask===taskKey);
@@ -67,19 +93,32 @@ async function processLatestAssistantMessage(){
 function save(){ saveSettingsDebounced(); }
 function html(){return `<section id="qinghui-lite-panel">
 <div class="ql-card"><h3>轻绘 Lite · 测试版</h3><p class="ql-muted">独立工作区可先测试 GPT / OpenAI 兼容生图。酒馆消息自动触发、NovelAI 与状态栏精准注入尚未接通。</p>
-<label>API 地址</label><input id="ql-endpoint" placeholder="https://api.openai.com/v1">
+<label>生图后端</label><select id="ql-provider"><option value="openai">GPT / OpenAI 兼容接口</option><option value="novelai">NovelAI（使用酒馆已配置的连接）</option></select>
+<div id="ql-openai-settings"><label>API 地址</label><input id="ql-endpoint" placeholder="https://api.openai.com/v1">
 <label>API Key</label><input id="ql-key" type="password" autocomplete="off" placeholder="不会写入 GitHub">
 <label>模型</label><input id="ql-model" placeholder="gpt-image-1">
 <div class="ql-row"><div><label>尺寸</label><select id="ql-size"><option>1024x1024</option><option>1536x1024</option><option>1024x1536</option></select></div><div><label>质量</label><select id="ql-quality"><option>low</option><option selected>medium</option><option>high</option></select></div></div>
-<button id="ql-save" class="menu_button">保存 API 设置</button></div>
+</div><div id="ql-nai-settings" hidden><label>NovelAI 模型</label><input id="ql-nai-model" value="nai-diffusion-4-5-full"><div class="ql-row"><div><label>步数</label><input id="ql-nai-steps" type="number" min="1" max="50"></div><div><label>CFG Scale</label><input id="ql-nai-scale" type="number" min="1" max="20" step="0.5"></div></div><div class="ql-row"><div><label>宽度</label><select id="ql-nai-width"><option>512</option><option>640</option><option>768</option><option selected>832</option><option>1024</option></select></div><div><label>高度</label><select id="ql-nai-height"><option>512</option><option>640</option><option>768</option><option selected>1216</option><option>1024</option><option>1536</option></select></div></div><label>采样器</label><select id="ql-nai-sampler"><option value="k_euler_ancestral">Euler Ancestral</option><option value="k_euler">Euler</option><option value="k_dpmpp_2m">DPM++ 2M</option><option value="k_dpmpp_2s_ancestral">DPM++ 2S Ancestral</option></select><label>调度器</label><select id="ql-nai-scheduler"><option value="karras">Karras</option><option value="native">Native</option></select></div><button id="ql-save" class="menu_button">保存后端设置</button></div>
 <div class="ql-card"><h3>独立生图工作区</h3><label>完整正向提示词</label><textarea id="ql-prompt" placeholder="输入完整提示词"></textarea><label>负向提示词</label><textarea id="ql-negative" placeholder="可选"></textarea><button id="ql-generate" class="menu_button">生成一张</button><p id="ql-status" class="ql-muted" role="status"></p><div id="ql-result"></div></div>
 <div class="ql-card"><h3>最近生成（本地记录）</h3><div id="ql-history"></div><button id="ql-clear" class="menu_button">清空记录</button></div></section>`;}
-function read(){const s=cfg();s.endpoint=$('#ql-endpoint').value.trim().replace(/\/$/,'');s.apiKey=$('#ql-key').value.trim();s.model=$('#ql-model').value.trim()||'gpt-image-1';s.size=$('#ql-size').value;s.quality=$('#ql-quality').value;s.prompt=$('#ql-prompt').value;s.negative=$('#ql-negative').value;save();}
+function read(){const s=cfg();s.provider=$('#ql-provider').value;s.endpoint=$('#ql-endpoint').value.trim().replace(/\/$/,'');s.apiKey=$('#ql-key').value.trim();s.model=$('#ql-model').value.trim()||'gpt-image-1';s.size=$('#ql-size').value;s.quality=$('#ql-quality').value;s.naiModel=$('#ql-nai-model').value.trim()||'nai-diffusion-4-5-full';s.naiSteps=Number($('#ql-nai-steps').value)||28;s.naiScale=Number($('#ql-nai-scale').value)||5;s.naiWidth=Number($('#ql-nai-width').value)||832;s.naiHeight=Number($('#ql-nai-height').value)||1216;s.naiSampler=$('#ql-nai-sampler').value;s.naiScheduler=$('#ql-nai-scheduler').value;s.prompt=$('#ql-prompt').value;s.negative=$('#ql-negative').value;save();}
 function status(t){$('#ql-status').textContent=t;}
 function history(){const host=$('#ql-history');if(!host)return;host.innerHTML=(cfg().records||[]).slice(0,10).map((r,i)=>`<div class="ql-record"><p>${esc(new Date(r.at).toLocaleString())} · ${esc(r.prompt.slice(0,100))}</p><img src="${r.dataUrl}" alt="生成结果"><button class="menu_button" data-ql-load="${i}">载入提示词</button></div>`).join('')||'<p class="ql-muted">暂无记录</p>';host.querySelectorAll('[data-ql-load]').forEach(b=>b.onclick=()=>{const r=cfg().records[+b.dataset.qlLoad];$('#ql-prompt').value=r.prompt;$('#ql-negative').value=r.negative;status('提示词已载入；点击生成会创建新记录。');});}
-function init(){const root=$('#qinghui-lite-panel');if(!root||root.dataset.ready)return;root.dataset.ready='1';const s=cfg();$('#ql-endpoint').value=s.endpoint;$('#ql-key').value=s.apiKey;$('#ql-model').value=s.model;$('#ql-size').value=s.size;$('#ql-quality').value=s.quality;$('#ql-prompt').value=s.prompt;$('#ql-negative').value=s.negative;history();
+function init(){const root=$('#qinghui-lite-panel');if(!root||root.dataset.ready)return;root.dataset.ready='1';const s=cfg();$('#ql-provider').value=s.provider||'openai';$('#ql-endpoint').value=s.endpoint;$('#ql-key').value=s.apiKey;$('#ql-model').value=s.model;$('#ql-size').value=s.size;$('#ql-quality').value=s.quality;$('#ql-nai-model').value=s.naiModel||'nai-diffusion-4-5-full';$('#ql-nai-steps').value=s.naiSteps||28;$('#ql-nai-scale').value=s.naiScale||5;$('#ql-nai-width').value=s.naiWidth||832;$('#ql-nai-height').value=s.naiHeight||1216;$('#ql-nai-sampler').value=s.naiSampler||'k_euler_ancestral';$('#ql-nai-scheduler').value=s.naiScheduler||'karras';$('#ql-prompt').value=s.prompt;$('#ql-negative').value=s.negative;const toggleProvider=()=>{const nai=$('#ql-provider').value==='novelai';$('#ql-openai-settings').hidden=nai;$('#ql-nai-settings').hidden=!nai;};$('#ql-provider').onchange=toggleProvider;toggleProvider();history();
 $('#ql-save').onclick=()=>{read();status('设置已保存到酒馆扩展设置。');};
-$('#ql-generate').onclick=async()=>{if(busy)return;read();const c=cfg();if(!c.endpoint||!c.apiKey||!c.prompt.trim()){status('请填写 API 地址、Key 和正向提示词。');return;}busy=true;$('#ql-generate').disabled=true;$('#ql-result').replaceChildren();status('正在请求生图接口……');try{const body={model:c.model,prompt:c.prompt.trim(),n:1,size:c.size};if(c.model.toLowerCase().includes('gpt-image'))body.quality=c.quality;if(c.negative.trim())body.negative_prompt=c.negative.trim();const res=await fetch(c.endpoint+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.apiKey},body:JSON.stringify(body)});const raw=await res.text();let data;try{data=JSON.parse(raw);}catch{throw Error('接口返回非 JSON（HTTP '+res.status+'），请检查供应商兼容格式。');}if(!res.ok)throw Error(data?.error?.message||'HTTP '+res.status);const item=data?.data?.[0];let url=item?.b64_json?'data:image/png;base64,'+item.b64_json:item?.url;if(!url&&data?.images?.[0]){const v=data.images[0];url=/^(data:|https?:)/.test(v)?v:'data:image/png;base64,'+v;}if(!url)throw Error('响应中没有可识别的图片。');const img=document.createElement('img');img.alt='轻绘生成结果';img.src=url;$('#ql-result').append(img);c.records.unshift({at:Date.now(),prompt:c.prompt.trim(),negative:c.negative.trim(),model:c.model,size:c.size,quality:c.quality,dataUrl:url});c.records=c.records.slice(0,20);save();history();status('生成完成。记录已保存在酒馆扩展设置中。');}catch(e){status('生成失败：'+(e?.message||String(e))+'。部分供应商需要支持浏览器 CORS。');}finally{busy=false;$('#ql-generate').disabled=false;}};
+$('#ql-generate').onclick=async()=>{
+ if(busy)return;read();const conf=cfg();
+ if(!conf.prompt.trim()){status('请填写正向提示词。');return;}
+ if(conf.provider!=='novelai'&&(!conf.endpoint||!conf.apiKey)){status('请填写 OpenAI 兼容 API 地址和 Key。');return;}
+ busy=true;$('#ql-generate').disabled=true;$('#ql-result').replaceChildren();status('正在请求生图接口……');
+ try{
+  const url=await requestImage(conf.prompt.trim(),conf.negative.trim());
+  const img=document.createElement('img');img.alt='轻绘生成结果';img.src=url;$('#ql-result').append(img);
+  conf.records.unshift({at:Date.now(),prompt:conf.prompt.trim(),negative:conf.negative.trim(),provider:conf.provider,model:conf.provider==='novelai'?conf.naiModel:conf.model,size:conf.provider==='novelai'?(conf.naiWidth+'x'+conf.naiHeight):conf.size,quality:conf.quality,dataUrl:url});
+  conf.records=conf.records.slice(0,20);save();history();status('生成完成。记录已保存在酒馆扩展设置中。');
+ }catch(e){status('生成失败：'+(e?.message||String(e))+'。');}
+ finally{busy=false;$('#ql-generate').disabled=false;}
+}
 $('#ql-clear').onclick=()=>{if(confirm('清空轻绘本地生成记录？不会删除聊天图片。')){cfg().records=[];save();history();status('记录已清空。');}};
 }
 jQuery(()=>{
