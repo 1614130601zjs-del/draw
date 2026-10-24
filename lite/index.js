@@ -362,7 +362,7 @@ function walkChatu8(data, pathName='', out={artists:[],prompts:[],vibes:[],warni
  const prompt=textValue(/^prompt$|提示词内容|完整提示词|正文提示词|正向提示词/i);
  const vibeLike=isVibeKey||/vibe|氛围转移|参考图组|参考组/i.test(String(data.type||data.kind||''));
  if(vibeLike){
-  const serialized=JSON.stringify(data);
+  const serialized=safeMigrationStringify(data)||'';
   const hasPayload=/data:image\//i.test(serialized)||/base64|encoded.?image|imageData|referenceImage|vibeData|vibe.*data/i.test(serialized);
   const hasRef=/https?:\/\/|blob:|cache.?id|image.?id|file.?name|path/i.test(serialized);
   pushUnique(out.vibes,{name,sourcePath:pathName,raw:data,hasPayload,hasRef},x=>x.name+'|'+x.sourcePath);
@@ -385,19 +385,28 @@ function renderMigrationPreview(candidate,source){
  const host=$('#ql-migrate-preview');if(!host)return;
  const vibePayload=candidate.vibes.filter(v=>v.hasPayload).length;
  const vibeRef=candidate.vibes.length-vibePayload;
- host.textContent=source+'：画师串 '+candidate.artists.length+' 条，提示词预设 '+candidate.prompts.length+' 条，Vibe 项目 '+candidate.vibes.length+' 条。'+(vibeRef?(' 其中 '+vibeRef+' 条未检测到可直接恢复的内嵌图片/编码内容。'):'')+(candidate.artists.length+candidate.prompts.length+candidate.vibes.length?' 请确认后导入。':' 未识别到可迁移项目。');
+ host.textContent=source+'：画师串 '+candidate.artists.length+' 条，提示词预设 '+candidate.prompts.length+' 条，Vibe 项目 '+candidate.vibes.length+' 条。'+(candidate.warnings?.length?' 扫描警告 '+candidate.warnings.length+' 条。':'')+(vibeRef?' 其中 '+vibeRef+' 条未检测到可确认的内嵌图片编码。':'')+(candidate.artists.length+candidate.prompts.length+candidate.vibes.length?' 请确认后导入。':' 未识别到可迁移项目；建议在智绘姬中导出完整设置 JSON，再用文件导入。');
  $('#ql-migrate-import').disabled=!(candidate.artists.length||candidate.prompts.length||candidate.vibes.length);
 }
 function scanChatu8Settings(){
  const found=[];
  for(const [key,value] of Object.entries(extension_settings||{})){
   if(/chatu8|智绘姬|zhihuiji/i.test(key))found.push({key,value});
+  else if(value&&typeof value==='object'&&/vibeGroups?|画师串|artistString|referenceImage|vibeData/i.test(safeMigrationStringify(value)))found.push({key,value});
  }
- if(!found.length){renderMigrationPreview({artists:[],prompts:[],vibes:[],warnings:[]},'当前酒馆扫描');return;}
+ try{
+  for(let i=0;i<localStorage.length;i++){
+   const key=localStorage.key(i);if(!key||!/chatu8|智绘姬|zhihuiji/i.test(key))continue;
+   const raw=localStorage.getItem(key);if(!raw)continue;
+   try{found.push({key:'localStorage:'+key,value:JSON.parse(raw)});}catch{}
+  }
+ }catch(e){console.warn('[轻绘 Lite] 无法扫描 localStorage',e);}
  const merged={artists:[],prompts:[],vibes:[],warnings:[]};
- for(const item of found)walkChatu8(item.value,item.key,merged);
- renderMigrationPreview(merged,'当前酒馆扫描（'+found.map(x=>x.key).join('、')+'）');
+ const seenKeys=new Set();
+ for(const item of found){if(seenKeys.has(item.key))continue;seenKeys.add(item.key);try{walkChatu8(item.value,item.key,merged);}catch(e){merged.warnings.push(item.key+'：读取失败');}}
+ renderMigrationPreview(merged,found.length?'当前酒馆扫描（'+found.map(x=>x.key).join('、')+'）':'当前酒馆扫描');
 }
+function safeMigrationStringify(value){try{return JSON.stringify(value);}catch{return '';}}
 async function readMigrationFile(file){
  try{
   const text=await file.text();
