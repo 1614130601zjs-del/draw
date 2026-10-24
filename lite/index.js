@@ -39,6 +39,10 @@ async function requestImage(prompt, negativeOverride){
  if(!url)throw new Error('响应中没有可识别的图片');
  return url;
 }
+function saveCleanImage(src,filename){
+ if(!src)return;
+ const a=document.createElement('a');a.href=src;a.download=filename||'qinghui-image.png';a.rel='noopener';a.style.display='none';document.body.append(a);a.click();a.remove();
+}
 function addMessageImage(host,url,prompt,taskKey,recordMeta={}) {
  if(!host)return;
  let card=[...host.querySelectorAll('.ql-chat-image')].find(el=>el.dataset.qlTask===taskKey);
@@ -54,15 +58,41 @@ function addMessageImage(host,url,prompt,taskKey,recordMeta={}) {
   controls.append(prev,count,next,reroll);card.append(img,caption,controls);host.append(card);
   card._qlCandidates=[];card._qlIndex=0;
   const render=()=>{const list=card._qlCandidates;const i=card._qlIndex;img.src=list[i].url;count.textContent=(i+1)+' / '+list.length;prev.disabled=i<=0;next.disabled=i>=list.length-1;};
-  prev.addEventListener('click',()=>{if(card._qlIndex>0){card._qlIndex--;render();}});
-  next.addEventListener('click',()=>{if(card._qlIndex<card._qlCandidates.length-1){card._qlIndex++;render();}});
+  const step=delta=>{const nextIndex=card._qlIndex+delta;if(nextIndex>=0&&nextIndex<card._qlCandidates.length){card._qlIndex=nextIndex;render();}};
+  prev.addEventListener('click',()=>step(-1));
+  next.addEventListener('click',()=>step(1));
+  let touchX=0,touchY=0;
+  img.addEventListener('touchstart',e=>{const t=e.changedTouches[0];touchX=t.clientX;touchY=t.clientY;},{passive:true});
+  img.addEventListener('touchend',e=>{const t=e.changedTouches[0],dx=t.clientX-touchX,dy=t.clientY-touchY;if(Math.abs(dx)>42&&Math.abs(dx)>Math.abs(dy)*1.25)step(dx<0?1:-1);},{passive:true});
+  img.addEventListener('contextmenu',e=>{e.preventDefault();saveCleanImage(img.src,'qinghui-'+Date.now()+'.png');});
   reroll.addEventListener('click',async()=>{if(card.dataset.qlBusy==='1')return;card.dataset.qlBusy='1';reroll.disabled=true;const old=reroll.textContent;reroll.textContent='生成中…';try{const fresh=await requestImage(prompt);card._qlCandidates.push({url:fresh,at:Date.now()});card._qlIndex=card._qlCandidates.length-1;render();storeChatRecord(fresh,prompt,taskKey,recordMeta);}catch(e){const note=document.createElement('p');note.className='ql-chat-image-status';note.textContent='轻绘生成失败：'+(e?.message||String(e));card.append(note);}finally{card.dataset.qlBusy='0';reroll.disabled=false;reroll.textContent=old;}});
   card._qlRender=render;
  }
  if(!card._qlCandidates.some(item=>item.url===url)){card._qlCandidates.push({url,at:Date.now()});card._qlIndex=card._qlCandidates.length-1;}
  card._qlRender?.();
 }
-function storeChatRecord(url,prompt,taskKey,meta={}){const c=cfg();c.records.unshift({at:Date.now(),prompt,negative:c.negative||'',provider:c.provider,model:c.provider==='novelai'?c.naiModel:c.model,size:c.provider==='novelai'?(c.naiWidth+'x'+c.naiHeight):c.size,quality:c.quality,dataUrl:url,source:meta.source||'chat',messageIndex:meta.messageIndex,taskKey});c.records=c.records.slice(0,20);save();}
+function snapshotConfig(prompt, negativeOverride){
+ const c=cfg();
+ return {
+  provider:c.provider, endpoint:c.provider==='openai'?c.endpoint:'', model:c.provider==='novelai'?c.naiModel:c.model,
+  size:c.provider==='novelai'?(c.naiWidth+'x'+c.naiHeight):c.size,
+  quality:c.provider==='openai'?c.quality:null,
+  negative:negativeOverride??c.negative??'',
+  nai:c.provider==='novelai'?{steps:c.naiSteps,scale:c.naiScale,width:c.naiWidth,height:c.naiHeight,sampler:c.naiSampler,scheduler:c.naiScheduler}:null
+ };
+}
+function storeChatRecord(url,prompt,taskKey,meta={}){
+ const c=cfg();
+ c.records.unshift({
+  id:taskKey+':'+Date.now(),at:Date.now(),prompt,negative:c.negative||'',
+  provider:c.provider,model:c.provider==='novelai'?c.naiModel:c.model,
+  size:c.provider==='novelai'?(c.naiWidth+'x'+c.naiHeight):c.size,
+  quality:c.provider==='openai'?c.quality:null,dataUrl:url,
+  config:snapshotConfig(prompt),source:meta.source||'chat',
+  messageIndex:meta.messageIndex,taskKey,character:meta.character||null,chatId:getContext()?.chatId||null
+ });
+ c.records=c.records.slice(0,20);save();history();
+}
 async function processLatestAssistantMessage(){
  const context=getContext();const chat=context?.chat;if(!Array.isArray(chat)||!chat.length)return;
  let messageIndex=-1;for(let i=chat.length-1;i>=0;i--){if(!chat[i]?.is_user&&!chat[i]?.is_system&&typeof chat[i]?.mes==='string'){messageIndex=i;break;}}
@@ -107,8 +137,13 @@ function renderStatusbarCard(frame,prompt,url,taskKey){
  controls.append(prev,count,next,reroll);card.append(img,controls);frame.append(card);
  card._qlCandidates=[{url,at:Date.now()}];card._qlIndex=0;
  const render=()=>{const list=card._qlCandidates;img.src=list[card._qlIndex].url;count.textContent=(card._qlIndex+1)+' / '+list.length;prev.disabled=card._qlIndex<=0;next.disabled=card._qlIndex>=list.length-1;};
- prev.onclick=()=>{if(card._qlIndex>0){card._qlIndex--;render();}};
- next.onclick=()=>{if(card._qlIndex<card._qlCandidates.length-1){card._qlIndex++;render();}};
+ const step=delta=>{const nextIndex=card._qlIndex+delta;if(nextIndex>=0&&nextIndex<card._qlCandidates.length){card._qlIndex=nextIndex;render();}};
+ prev.onclick=()=>step(-1);
+ next.onclick=()=>step(1);
+ let touchX=0,touchY=0;
+ img.addEventListener('touchstart',e=>{const t=e.changedTouches[0];touchX=t.clientX;touchY=t.clientY;},{passive:true});
+ img.addEventListener('touchend',e=>{const t=e.changedTouches[0],dx=t.clientX-touchX,dy=t.clientY-touchY;if(Math.abs(dx)>42&&Math.abs(dx)>Math.abs(dy)*1.25)step(dx<0?1:-1);},{passive:true});
+ img.addEventListener('contextmenu',e=>{e.preventDefault();saveCleanImage(img.src,'qinghui-'+Date.now()+'.png');});
  reroll.onclick=async()=>{if(card.dataset.busy==='1')return;card.dataset.busy='1';reroll.disabled=true;const old=reroll.textContent;reroll.textContent='生成中';try{const fresh=await requestImage(prompt);card._qlCandidates.push({url:fresh,at:Date.now()});card._qlIndex=card._qlCandidates.length-1;render();storeChatRecord(fresh,prompt,taskKey,{source:'statusbar'});}catch(e){statusbarError(frame,prompt,taskKey,e);}finally{card.dataset.busy='0';reroll.disabled=false;reroll.textContent=old;}};
  frame.classList.remove('scanning');frame.dataset.qlDone='1';render();
 }
