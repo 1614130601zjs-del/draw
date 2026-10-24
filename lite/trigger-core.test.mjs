@@ -28,4 +28,17 @@ registry.markFailed(failedId);
 assert.equal(registry.retry(failedId).accepted, true, 'retry must be explicit');
 assert.equal(registry.get(failedId).attempts, 2);
 
-console.log('轻绘触发核心测试通过：marker parsing、final gating、dedupe、state transitions、explicit retry。');
+const candidateId = id + ':candidate';
+assert.equal(registry.begin(candidateId, { prompt }).accepted, true);
+registry.markRunning(candidateId);
+registry.markSucceeded(candidateId, 'candidate-1');
+assert.equal(registry.beginCandidate(candidateId, { prompt }).accepted, true);
+registry.markRunning(candidateId);
+registry.markSucceeded(candidateId, 'candidate-2');
+assert.deepEqual(registry.get(candidateId).resultIds, ['candidate-1', 'candidate-2'], 'new candidates must preserve earlier results');
+
+const growing = ['image###', 'image###rainy', 'image###rainy night', 'image###rainy night###'];
+assert.deepEqual(growing.slice(0, 3).map(part => parseImageMarkers(part).length), [0, 0, 0], 'partial stream must not trigger');
+assert.equal(parseImageMarkers(growing[3])[0].prompt, 'rainy night');
+
+console.log('轻绘触发核心测试通过：marker parsing、stream fragments、final gating、dedupe、state transitions、retry、candidate preservation。');
