@@ -32,7 +32,7 @@ async function requestImage(prompt, negativeOverride){
  const body={model:c.model,prompt,n:1,size:c.size};
  if(model.includes('gpt-image')){
   body.quality=c.quality;
-  if(negative)body.prompt=prompt+'\\n\\nAvoid these visual elements: '+negative;
+  if(negative)body.prompt=prompt+'\n\nAvoid these visual elements: '+negative;
  }else if(negative){
   body.negative_prompt=negative;
  }
