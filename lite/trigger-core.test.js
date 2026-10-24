@@ -11,7 +11,7 @@ test('extracts one complete marker and keeps prompt whitespace trimmed', () => {
   assert.deepEqual(parseImageMarkers('hello image###  portrait, soft light  ### bye'), [
     {
       index: 6,
-      end: 42,
+      end: 41,
       prompt: 'portrait, soft light',
       marker: 'image###  portrait, soft light  ###',
     },
