@@ -105,7 +105,7 @@ function storeChatRecord(url,prompt,taskKey,meta={}){
   config:snapshotConfig(prompt),source:meta.source||'chat',
   messageIndex:meta.messageIndex,taskKey,character:meta.character||null,chatId:getContext()?.chatId||null
  });
- c.records=c.records.slice(0,20);save();history();
+ c.records=c.records.slice(0,10);save();history();
 }
 async function processLatestAssistantMessage(){
  const context=getContext();const chat=context?.chat;if(!Array.isArray(chat)||!chat.length)return;
@@ -319,7 +319,7 @@ function read(){const s=cfg();s.provider=$('#ql-provider').value;s.endpoint=$('#
 function status(t){$('#ql-status').textContent=t;}
 function history(){
  const host=$('#ql-history');if(!host)return;
- host.innerHTML=(cfg().records||[]).slice(0,20).map((r,i)=>'<div class="ql-record"><p>'+esc(new Date(r.at).toLocaleString())+' · '+esc((r.prompt||'').slice(0,100))+'</p><img src="'+r.dataUrl+'" alt="生成结果"><div class="ql-row"><button class="menu_button" data-ql-load="'+i+'">载入提示词</button><button class="menu_button" data-ql-download="'+i+'">保存图片</button><button class="menu_button" data-ql-delete="'+i+'">删除记录</button></div></div>').join('')||'<p class="ql-muted">暂无记录</p>';
+ host.innerHTML=(cfg().records||[]).slice(0,10).map((r,i)=>'<div class="ql-record"><p>'+esc(new Date(r.at).toLocaleString())+' · '+esc((r.prompt||'').slice(0,100))+'</p><img src="'+r.dataUrl+'" alt="生成结果"><div class="ql-row"><button class="menu_button" data-ql-load="'+i+'">载入提示词</button><button class="menu_button" data-ql-download="'+i+'">保存图片</button><button class="menu_button" data-ql-delete="'+i+'">删除记录</button></div></div>').join('')||'<p class="ql-muted">暂无记录</p>';
  host.querySelectorAll('[data-ql-load]').forEach(b=>b.onclick=()=>{const r=cfg().records[+b.dataset.qlLoad];$('#ql-prompt').value=r.prompt||'';$('#ql-negative').value=r.negative||'';read();status('提示词已载入；点击生成会创建新记录。');});
  host.querySelectorAll('[data-ql-download]').forEach(b=>b.onclick=()=>{const r=cfg().records[+b.dataset.qlDownload];saveCleanImage(r.dataUrl,'qinghui-'+(r.at||Date.now())+'.png');});
  host.querySelectorAll('[data-ql-delete]').forEach(b=>b.onclick=()=>{const i=+b.dataset.qlDelete;if(!confirm('删除这条轻绘生成记录？不会删除聊天消息中的图片。'))return;cfg().records.splice(i,1);save();history();status('记录已删除。');});
@@ -328,13 +328,14 @@ function renderLibrary(){
  const s=cfg();
  const prompts=$('#ql-prompts-list'),chars=$('#ql-characters-list'),presets=$('#ql-presets-list');
  if(prompts)prompts.innerHTML=(s.prompts||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.category||'未分类')+' · '+esc((p.prompt||'').slice(0,100))+'</p><button class="menu_button" data-prompt-load="'+i+'">载入</button><button class="menu_button" data-prompt-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无提示词</p>';
- if(chars)chars.innerHTML=(s.characters||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.appearance)+'</p><button class="menu_button" data-character-apply="'+i+'">追加外貌词</button><button class="menu_button" data-character-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无角色</p>';
+ if(chars)chars.innerHTML=(s.characters||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.appearance)+'</p><button class="menu_button" data-character-apply="'+i+'">追加外貌词</button><button class="menu_button" data-character-edit="'+i+'">编辑</button><button class="menu_button" data-character-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无角色</p>';
  if(presets)presets.innerHTML=(s.presets||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.positive)+'</p><button class="menu_button" data-preset-apply="'+i+'">应用</button><button class="menu_button" data-preset-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无预设</p>';
  prompts?.querySelectorAll('[data-prompt-load]').forEach(b=>b.onclick=()=>{const p=s.prompts[+b.dataset.promptLoad];$('#ql-prompt').value=p.prompt;$('#ql-negative').value=p.negative||'';read();status('已载入提示词：'+p.name);});
  prompts?.querySelectorAll('[data-prompt-edit]').forEach(b=>b.onclick=()=>{const p=s.prompts[+b.dataset.promptEdit];$('#ql-prompt-name').value=p.name||'';$('#ql-prompt-category').value=p.category||'';$('#ql-library-prompt').value=p.prompt||'';$('#ql-library-negative').value=p.negative||'';$('#ql-prompt-save').dataset.edit=String(+b.dataset.promptEdit);$('#ql-prompt-save').textContent='保存修改';});
   prompts?.querySelectorAll('[data-prompt-delete]').forEach(b=>b.onclick=()=>{s.prompts.splice(+b.dataset.promptDelete,1);save();renderLibrary();});
  chars?.querySelectorAll('[data-character-apply]').forEach(b=>b.onclick=()=>{const p=s.characters[+b.dataset.characterApply];$('#ql-prompt').value=[$('#ql-prompt').value.trim(),p.appearance].filter(Boolean).join(', ');read();status('已追加角色外貌词：'+p.name);});
- chars?.querySelectorAll('[data-character-delete]').forEach(b=>b.onclick=()=>{s.characters.splice(+b.dataset.characterDelete,1);save();renderLibrary();});
+ chars?.querySelectorAll('[data-character-edit]').forEach(b=>b.onclick=()=>{const p=s.characters[+b.dataset.characterEdit];$('#ql-character-name').value=p.name||'';$('#ql-character-appearance').value=p.appearance||'';$('#ql-character-save').dataset.edit=String(+b.dataset.characterEdit);$('#ql-character-save').textContent='保存修改';});
+  chars?.querySelectorAll('[data-character-delete]').forEach(b=>b.onclick=()=>{s.characters.splice(+b.dataset.characterDelete,1);save();renderLibrary();});
  presets?.querySelectorAll('[data-preset-apply]').forEach(b=>b.onclick=()=>{const p=s.presets[+b.dataset.presetApply];$('#ql-prompt').value=[$('#ql-prompt').value.trim(),p.positive].filter(Boolean).join(', ');if(p.negative)$('#ql-negative').value=[$('#ql-negative').value.trim(),p.negative].filter(Boolean).join(', ');read();status('已应用预设：'+p.name);});
  presets?.querySelectorAll('[data-preset-edit]').forEach(b=>b.onclick=()=>{const p=s.presets[+b.dataset.presetEdit];$('#ql-preset-name').value=p.name||'';$('#ql-preset-positive').value=p.positive||'';$('#ql-preset-negative').value=p.negative||'';$('#ql-preset-save').dataset.edit=String(+b.dataset.presetEdit);$('#ql-preset-save').textContent='保存修改';});
   presets?.querySelectorAll('[data-preset-delete]').forEach(b=>b.onclick=()=>{s.presets.splice(+b.dataset.presetDelete,1);save();renderLibrary();});
@@ -355,7 +356,7 @@ $('#ql-generate').onclick=async()=>{
  finally{busy=false;$('#ql-generate').disabled=false;}
 }
 $('#ql-prompt-save').onclick=()=>{const name=$('#ql-prompt-name').value.trim(),prompt=$('#ql-library-prompt').value.trim();if(!name||!prompt){status('提示词名称和内容不能为空。');return;}const item={name,category:$('#ql-prompt-category').value.trim(),prompt,negative:$('#ql-library-negative').value.trim(),updatedAt:Date.now()};const edit=$('#ql-prompt-save').dataset.edit;if(edit!==undefined){cfg().prompts[Number(edit)]=item;delete $('#ql-prompt-save').dataset.edit;$('#ql-prompt-save').textContent='保存提示词';}else cfg().prompts.unshift(item);cfg().prompts=cfg().prompts.slice(0,200);save();renderLibrary();status('提示词已保存。');};
-$('#ql-character-save').onclick=()=>{const name=$('#ql-character-name').value.trim(),appearance=$('#ql-character-appearance').value.trim();if(!name||!appearance){status('请填写角色名称和外貌词。');return;}cfg().characters.unshift({name,appearance,updatedAt:Date.now()});cfg().characters=cfg().characters.slice(0,100);save();renderLibrary();status('角色已保存。');};
+$('#ql-character-save').onclick=()=>{const name=$('#ql-character-name').value.trim(),appearance=$('#ql-character-appearance').value.trim();if(!name||!appearance){status('请填写角色名称和外貌词。');return;}const item={name,appearance,updatedAt:Date.now()};const edit=$('#ql-character-save').dataset.edit;if(edit!==undefined){cfg().characters[Number(edit)]=item;delete $('#ql-character-save').dataset.edit;$('#ql-character-save').textContent='保存角色';}else cfg().characters.unshift(item);cfg().characters=cfg().characters.slice(0,100);save();renderLibrary();status('角色已保存。');};
 $('#ql-preset-save').onclick=()=>{const name=$('#ql-preset-name').value.trim(),positive=$('#ql-preset-positive').value.trim();if(!name||!positive){status('预设名称和正向画风串不能为空。');return;}const item={name,positive,negative:$('#ql-preset-negative').value.trim(),updatedAt:Date.now()};const edit=$('#ql-preset-save').dataset.edit;if(edit!==undefined){cfg().presets[Number(edit)]=item;delete $('#ql-preset-save').dataset.edit;$('#ql-preset-save').textContent='保存预设';}else cfg().presets.unshift(item);cfg().presets=cfg().presets.slice(0,100);save();renderLibrary();status('预设已保存。');};
 $('#ql-clear').onclick=()=>{if(confirm('清空轻绘本地生成记录？不会删除聊天图片。')){cfg().records=[];save();history();status('记录已清空。');}};
 }
