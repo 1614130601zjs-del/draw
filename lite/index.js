@@ -167,7 +167,7 @@ function statusbarError(frame,prompt,taskKey,error){
  const retry=document.createElement('button');retry.type='button';retry.className='menu_button';retry.textContent='点击重试';
  retry.onclick=async()=>{retry.disabled=true;retry.textContent='生成中…';try{const url=await requestImage(prompt);const card=frame.querySelector('.ql-statusbar-card');if(card&&typeof card._qlAddCandidate==='function'){card._qlAddCandidate(url);note.remove();}else{renderStatusbarCard(frame,prompt,url,taskKey);}storeChatRecord(url,prompt,taskKey,{source:'statusbar'});}catch(e){statusbarError(frame,prompt,taskKey,e);}};
  note.append(text,retry);
- if(existingCard){existingCard.append(note);}else{frame.replaceChildren(note);}
+ if(existingCard){existingCard.append(note);}else{frame.replaceChildren(note);frame.classList.remove('scanning');frame.dataset.qlDone='1';}
 }
 async function processStatusbarFrames(){
  const docs=[document];
