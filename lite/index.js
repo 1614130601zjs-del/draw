@@ -134,9 +134,10 @@ function parseStatusbarMarker(text){const match=String(text||'').match(/image###
 function renderStatusbarCard(frame,prompt,url,taskKey){
  let card=frame.querySelector('.ql-statusbar-card');
  if(!card||card.dataset.qlTask!==taskKey){
-  frame.replaceChildren();
+  frame.querySelectorAll('.ql-statusbar-card,.ql-statusbar-error,.ql-statusbar-loading').forEach(el=>el.remove());
+  if(getComputedStyle(frame).position==='static')frame.style.position='relative';
   card=document.createElement('div');card.className='ql-statusbar-card';card.dataset.qlTask=taskKey;
-  card.style.cssText='position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#000;';
+  card.style.cssText='position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#000;z-index:6;';
   const img=document.createElement('img');img.alt='轻绘状态栏画面';img.loading='eager';img.style.cssText='display:block;width:100%;height:100%;object-fit:contain;';
   const controls=document.createElement('div');controls.className='ql-statusbar-controls';controls.style.cssText='position:absolute;left:0;right:0;bottom:4px;z-index:8;display:flex;align-items:center;justify-content:center;gap:4px;opacity:.92;';
   const prev=document.createElement('button');prev.type='button';prev.className='menu_button';prev.textContent='‹';
@@ -167,7 +168,7 @@ function statusbarError(frame,prompt,taskKey,error){
  const retry=document.createElement('button');retry.type='button';retry.className='menu_button';retry.textContent='点击重试';
  retry.onclick=async()=>{retry.disabled=true;retry.textContent='生成中…';try{const url=await requestImage(prompt);const card=frame.querySelector('.ql-statusbar-card');if(card&&typeof card._qlAddCandidate==='function'){card._qlAddCandidate(url);note.remove();}else{renderStatusbarCard(frame,prompt,url,taskKey);}storeChatRecord(url,prompt,taskKey,{source:'statusbar'});}catch(e){statusbarError(frame,prompt,taskKey,e);}};
  note.append(text,retry);
- if(existingCard){existingCard.append(note);}else{frame.replaceChildren(note);frame.classList.remove('scanning');frame.dataset.qlDone='1';}
+ if(existingCard){existingCard.append(note);}else{frame.querySelectorAll('.ql-statusbar-loading').forEach(el=>el.remove());frame.append(note);frame.classList.remove('scanning');frame.dataset.qlDone='1';}
 }
 async function processStatusbarFrames(){
  const docs=[document];
@@ -179,9 +180,12 @@ async function processStatusbarFrames(){
   if(!prompt)continue;
   frame.dataset.qlPrompt=prompt;frame.dataset.qlBusy='1';
   const taskKey='statusbar:'+((getContext()?.chatId)||'chat')+':'+(frame.dataset.qlTaskId||(frame.dataset.qlTaskId=''+(++statusbarSerial)));
-  frame.textContent='轻绘：正在生成画面…';
-  try{const url=await requestImage(prompt);renderStatusbarCard(frame,prompt,url,taskKey);storeChatRecord(url,prompt,taskKey,{source:'statusbar'});}
-  catch(e){statusbarError(frame,prompt,taskKey,e);}
+  const loading=document.createElement('div');loading.className='ql-statusbar-loading';loading.textContent='轻绘：正在生成画面…';
+  loading.style.cssText='position:absolute;inset:0;z-index:7;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);color:#fff;font-size:13px;';
+  if(getComputedStyle(frame).position==='static')frame.style.position='relative';
+  frame.append(loading);
+  try{const url=await requestImage(prompt);loading.remove();renderStatusbarCard(frame,prompt,url,taskKey);storeChatRecord(url,prompt,taskKey,{source:'statusbar'});}
+  catch(e){loading.remove();statusbarError(frame,prompt,taskKey,e);}
   finally{frame.dataset.qlBusy='0';}
  }
 }
