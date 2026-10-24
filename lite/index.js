@@ -112,8 +112,11 @@ async function processLatestAssistantMessage(){
  if(messageIndex<0)return;
  const message=chat[messageIndex];const found=markers(message.mes);if(!found.length)return;
  const host=document.querySelector('.mes[mesid="'+messageIndex+'"] .mes_text');if(host)hideMarkersInTextNode(host);
- for(const marker of found){
-  const taskKey=[context.chatId||'chat',messageIndex,message.swipe_id??0,marker.index].join(':');
+ for(let markerOrdinal=0;markerOrdinal<found.length;markerOrdinal++){
+  const marker=found[markerOrdinal];
+  // 不把 marker.index 放进任务 ID：流式输出时，前文增长会改变标记的字符偏移，
+  // 进而让同一张图被重复请求。按消息、swipe 和标记出现顺序去重。
+  const taskKey=[context.chatId||'chat',messageIndex,message.swipe_id??0,'marker',markerOrdinal].join(':');
   if(!host||autoTasks.has(taskKey))continue;
   autoTasks.add(taskKey);
   const pending=document.createElement('p');pending.className='ql-chat-image-status';pending.textContent='轻绘：正在生成图片…';host.append(pending);
