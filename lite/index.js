@@ -161,13 +161,28 @@ async function processLatestAssistantMessage(){
 
 let statusbarObserver=null;
 const statusbarObservedDocs=new WeakSet();
-function parseStatusbarMarker(text){const match=String(text||'').match(/image###([\\s\\S]*?)###/);return match?.[1]?.trim()||'';}
-function statusbarTaskKey(frame,prompt,doc){
- const message=frame.closest('.mes[mesid]')||frame.closest('.mes');
+function parseStatusbarMarker(text){const match=String(text||'').match(/image###([\s\S]*?)###/);return match?.[1]?.trim()||'';}
+function statusbarPromptForTarget(target){
+ const direct=[
+  target?.textContent,
+  target?.getAttribute?.('data-tag'),
+  ...Array.from(target?.querySelectorAll?.('[data-tag]')||[],el=>el.getAttribute('data-tag'))
+ ];
+ for(const value of direct){const prompt=parseStatusbarMarker(value);if(prompt)return prompt;}
+ let ancestor=target?.parentElement;
+ while(ancestor&&!ancestor.matches?.('.mes')){
+  const prompt=parseStatusbarMarker(ancestor.getAttribute?.('data-tag'));
+  if(prompt)return prompt;
+  ancestor=ancestor.parentElement;
+ }
+ return '';
+}
+function statusbarTaskKey(target,prompt,doc){
+ const message=target.closest('.mes[mesid]')||target.closest('.mes');
  const messageId=message?.getAttribute('mesid')||message?.dataset?.mesid||'no-message-id';
  const scope=message||doc;
- const targets=Array.from(scope.querySelectorAll('.dy-screen #shot-frame'));
- const ordinal=Math.max(0,targets.indexOf(frame));
+ const targets=Array.from(scope.querySelectorAll('[class~="scanning"]')).filter(el=>statusbarPromptForTarget(el));
+ const ordinal=Math.max(0,targets.indexOf(target));
  let hash=2166136261;
  for(let i=0;i<prompt.length;i++){hash^=prompt.charCodeAt(i);hash=Math.imul(hash,16777619);}
  return 'statusbar:'+String(getContext()?.chatId||'chat')+':'+messageId+':'+ordinal+':'+(hash>>>0).toString(36);
@@ -207,21 +222,19 @@ function statusbarError(frame,prompt,taskKey,error){
  const note=document.createElement('div');note.className='ql-statusbar-error';
  const text=document.createElement('span');text.textContent='轻绘生成失败：'+(error?.message||String(error))+' ';
  const retry=document.createElement('button');retry.type='button';retry.className='menu_button';retry.textContent='点击重试';
- retry.onclick=async()=>{const accepted=triggerRegistry.begin(taskKey,{prompt,source:'statusbar-retry'});if(!accepted.accepted)return;triggerRegistry.markRunning(taskKey);retry.disabled=true;retry.textContent='生成中…';try{const url=await requestImage(prompt);const card=frame.querySelector('.ql-statusbar-card');if(card&&typeof card._qlAddCandidate==='function'){card._qlAddCandidate(url);note.remove();}else{renderStatusbarCard(frame,prompt,url,taskKey);}storeChatRecord(url,prompt,taskKey,{source:'statusbar'});triggerRegistry.markSucceeded(taskKey,taskKey+':candidate:'+Date.now());}catch(e){triggerRegistry.markFailed(taskKey,e?.message||String(e));statusbarError(frame,prompt,taskKey,e);}};
- note.append(text,retry);
- if(existingCard){existingCard.append(note);}else{frame.querySelectorAll('.ql-statusbar-loading').forEach(el=>el.remove());frame.append(note);frame.classList.remove('scanning');frame.dataset.qlDone='1';}
-}
-async function processStatusbarFrames(){
+ retry.onclick=async()=>{const accepted=triggerRegistry.begin(taskKey,{prompt,source:'statusbar-retry'});if(!accepted.accepted)return;triggerRegistry.markRunning(taskKey);retry.disabled=true;retry.textContent='生成中…';try{const url=await requestImage(prompt);const card=frame.querySelector('.ql-statusbar-card');if(card&&typeof card._qlAdasync function processStatusbarFrames(){
  const docs=[document];
  document.querySelectorAll('iframe').forEach(iframe=>{try{if(iframe.contentDocument)docs.push(iframe.contentDocument);}catch{}});
- const frames=docs.flatMap(doc=>Array.from(doc.querySelectorAll('.dy-screen #shot-frame.scanning')));
+ const frames=docs.flatMap(doc=>Array.from(doc.querySelectorAll('[class~="scanning"]')).filter(frame=>{
+  const prompt=statusbarPromptForTarget(frame);
+  if(!prompt)return false;
+  // If nested scanning nodes describe the same marker, let the innermost target own it.
+  return !Array.from(frame.querySelectorAll('[class~="scanning"]')).some(child=>statusbarPromptForTarget(child)===prompt);
+ }));
  for(const frame of frames){
-  // 先读取当前提示词，再判断是否已处理：正则重渲染复用同一个 DOM 时，
-  // 新提示词必须建立新任务，不能被旧的 qlDone 标记永久挡住。
-  // 只接入抖音正则明确创建的 #shot > #shot-frame，不扫描页面其他插件的图片框。
-  const shot=frame.closest('#shot');
-  if(!shot||!shot.closest('.dy-screen'))continue;
-  const prompt=parseStatusbarMarker(frame.textContent)||parseStatusbarMarker(shot.getAttribute('data-tag'));
+  // Generic statusbar contract: a scanning target exposes image###prompt### in its text
+  // or a data-tag attribute on itself, descendants, or its nearest tagged wrapper.
+  const prompt=statusbarPromptForTarget(frame);
   if(!prompt)continue;
   if(frame.dataset.qlPrompt!==prompt){
    frame.dataset.qlPrompt=prompt;
@@ -230,12 +243,19 @@ async function processStatusbarFrames(){
   }
   if(frame.dataset.qlBusy==='1'||frame.dataset.qlDone==='1')continue;
   frame.dataset.qlBusy='1';
-  const taskKey=statusbarTaskKey(frame,prompt,doc);
-  const accepted=triggerRegistry.begin(taskKey,{prompt,source:'statusbar',frameTaskId:frame.dataset.qlTaskId});
+  const taskKey=statusbarTaskKey(frame,prompt,frame.ownerDocument||document);
+  const accepted=triggerRegistry.begin(taskKey,{prompt,source:'statusbar'});
   if(!accepted.accepted){frame.dataset.qlBusy='0';continue;}
   triggerRegistry.markRunning(taskKey);
   const loading=document.createElement('div');loading.className='ql-statusbar-loading';loading.textContent='轻绘：正在生成画面…';
   loading.style.cssText='position:absolute;inset:0;z-index:7;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);color:#fff;font-size:13px;';
+  if(getComputedStyle(frame).position==='static')frame.style.position='relative';
+  frame.append(loading);
+  try{const url=await requestImage(prompt);loading.remove();renderStatusbarCard(frame,prompt,url,taskKey);storeChatRecord(url,prompt,taskKey,{source:'statusbar'});triggerRegistry.markSucceeded(taskKey,taskKey+':candidate:'+Date.now());}
+  catch(e){triggerRegistry.markFailed(taskKey,e?.message||String(e));loading.remove();statusbarError(frame,prompt,taskKey,e);}
+  finally{frame.dataset.qlBusy='0';}
+}
+stify-content:center;background:rgba(0,0,0,.72);color:#fff;font-size:13px;';
   if(getComputedStyle(frame).position==='static')frame.style.position='relative';
   frame.append(loading);
   try{const url=await requestImage(prompt);loading.remove();renderStatusbarCard(frame,prompt,url,taskKey);storeChatRecord(url,prompt,taskKey,{source:'statusbar'});triggerRegistry.markSucceeded(taskKey,taskKey+':candidate:'+Date.now());}
