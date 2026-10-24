@@ -9,7 +9,7 @@ const defaults = { provider:'openai', endpoint:'https://api.openai.com/v1', apiK
 const $ = (s, root=document) => root.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let busy=false;
-function cfg(){ extension_settings[EXT] ??= structuredClone(defaults); return extension_settings[EXT]; }
+function cfg(){ extension_settings[EXT] ??= structuredClone(defaults); const s=extension_settings[EXT]; for(const key of ['records','presets','characters','prompts'])if(!Array.isArray(s[key]))s[key]=[]; return s; }
 const triggerRegistry = new TriggerRegistry();
 const autoTasks = new Set(); // 临时兼容旧入口状态；任务准入与状态以 triggerRegistry 为准。
 function markers(text){return parseImageMarkers(text).map(({index,prompt,marker})=>({index,prompt,raw:marker}));}
