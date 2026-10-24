@@ -2,7 +2,7 @@ import { extension_settings, saveSettingsDebounced } from '../../../extensions.j
 import { eventSource, event_types } from '../../../script.js';
 import { getContext } from '../../../extensions.js';
 import { getRequestHeaders } from '../../../script.js';
-import { parseImageMarkers } from './trigger-core.js';
+import { parseImageMarkers, makeTriggerId, TriggerRegistry } from './trigger-core.js';
 
 const EXT = 'qinghui_lite';
 const defaults = { provider:'openai', endpoint:'https://api.openai.com/v1', apiKey:'', model:'gpt-image-1', size:'1024x1024', quality:'medium', naiModel:'nai-diffusion-4-5-full', naiSteps:28, naiScale:5, naiWidth:832, naiHeight:1216, naiSampler:'k_euler_ancestral', naiScheduler:'karras', prompt:'', negative:'', records:[] };
@@ -10,7 +10,8 @@ const $ = (s, root=document) => root.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let busy=false;
 function cfg(){ extension_settings[EXT] ??= structuredClone(defaults); return extension_settings[EXT]; }
-const autoTasks = new Set();
+const triggerRegistry = new TriggerRegistry();
+const autoTasks = new Set(); // 临时兼容旧入口状态；任务准入与状态以 triggerRegistry 为准。
 function markers(text){return parseImageMarkers(text).map(({index,prompt,marker})=>({index,prompt,raw:marker}));}
 function hideMarkersInTextNode(root){if(!root)return;const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())if(walker.currentNode.nodeValue?.includes('image###'))nodes.push(walker.currentNode);for(const node of nodes){node.nodeValue=node.nodeValue.replace(/image###[\s\S]*?###/g,'');}}
 async function requestImage(prompt, negativeOverride){
@@ -116,20 +117,41 @@ async function processLatestAssistantMessage(){
   const marker=found[markerOrdinal];
   // 不把 marker.index 放进任务 ID：流式输出时，前文增长会改变标记的字符偏移，
   // 进而让同一张图被重复请求。按消息、swipe 和标记出现顺序去重。
-  const taskKey=[context.chatId||'chat',messageIndex,message.swipe_id??0,'marker',markerOrdinal].join(':');
-  if(!host||autoTasks.has(taskKey))continue;
+  let taskKey;
+  try {
+   taskKey=makeTriggerId({
+    chatId:context.chatId||'chat',
+    messageId:String(messageIndex)+':'+String(message.swipe_id??0),
+    markerIndex:markerOrdinal
+   });
+  } catch (error) {
+   console.warn('[轻绘 Lite] 无法为消息创建稳定任务 ID',error);
+   continue;
+  }
+  if(!host)continue;
+  // 任务注册表统一负责自动触发去重与状态迁移；同一流式消息重复扫描不会重复请求。
+  const accepted=triggerRegistry.begin(taskKey,{prompt:marker.prompt,source:'chat',messageIndex,markerOrdinal});
+  if(!accepted.accepted)continue;
   autoTasks.add(taskKey);
+  triggerRegistry.markRunning(taskKey);
   const pending=document.createElement('p');pending.className='ql-chat-image-status';pending.textContent='轻绘：正在生成图片…';host.append(pending);
-  try{const url=await requestImage(marker.prompt);pending.remove();addMessageImage(host,url,marker.prompt,taskKey,{messageIndex});storeChatRecord(url,marker.prompt,taskKey,{messageIndex});}
+  try{
+   const url=await requestImage(marker.prompt);
+   pending.remove();
+   addMessageImage(host,url,marker.prompt,taskKey,{messageIndex});
+   storeChatRecord(url,marker.prompt,taskKey,{messageIndex});
+   triggerRegistry.markSucceeded(taskKey,taskKey+':candidate:'+Date.now());
+  }
   catch(error){
+   triggerRegistry.markFailed(taskKey,error?.message||String(error));
    pending.replaceChildren();
    const message=document.createElement('span');
    message.textContent='轻绘生成失败：'+(error?.message||String(error))+' ';
    const retry=document.createElement('button');
    retry.type='button';retry.className='menu_button';retry.textContent='点击重试';
    retry.addEventListener('click',()=>{
-    if(autoTasks.has(taskKey))autoTasks.delete(taskKey);
     pending.remove();
+    // failed 状态允许再次 begin；成功任务仍由 registry 拒绝重复执行。
     processLatestAssistantMessage().catch(e=>console.warn('[轻绘 Lite] 手动重试失败',e));
    },{once:true});
    pending.append(message,retry);
