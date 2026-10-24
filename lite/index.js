@@ -24,13 +24,13 @@ async function requestImage(prompt, negativeOverride){
   try{data=JSON.parse(raw);}catch{}
   let value=data?.images?.[0]??data?.image??raw.trim();
   if(typeof value!=='string'||!value)throw new Error('NovelAI 响应中没有可识别的图片');
-  return /^(data:|https?:)/.test(value)?value:'data:image/png;base64,'+value.replace(/^data:image\\/[^;]+;base64,/,'');
+  return /^(data:|https?:)/.test(value)?value:'data:image/png;base64,'+value.replace(/^data:image\/[^;]+;base64,/,'');
  }
  if(!c.endpoint||!c.apiKey)throw new Error('请先在轻绘设置中填写 OpenAI 兼容 API 地址和 Key');
  const body={model:c.model,prompt,n:1,size:c.size};
  if(c.model.toLowerCase().includes('gpt-image'))body.quality=c.quality;
  if((negativeOverride??c.negative??'').trim())body.negative_prompt=(negativeOverride??c.negative).trim();
- res=await fetch(c.endpoint.replace(/\\/$/, '')+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.apiKey},body:JSON.stringify(body)});
+ res=await fetch(c.endpoint.replace(/\/$/, '')+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.apiKey},body:JSON.stringify(body)});
  raw=await res.text();
  try{data=JSON.parse(raw);}catch{throw new Error('接口返回非 JSON（HTTP '+res.status+'）');}
  if(!res.ok)throw new Error(data?.error?.message||'HTTP '+res.status);
