@@ -1,19 +1,3 @@
-import { extension_settings, saveSettingsDebounced } from '../../../extensions.js';
-import { eventSource, event_types } from '../../../script.js';
-import { getContext } from '../../../extensions.js';
-import { getRequestHeaders } from '../../../script.js';
-import { parseImageMarkers, makeTriggerId, TriggerRegistry } from './trigger-core.js';
-
-const EXT = 'qinghui_lite';
-const defaults = { vibes:[], activeVibeIndex:-1, provider:'openai', endpoint:'https://api.openai.com/v1', apiKey:'', model:'gpt-image-1', size:'1024x1024', quality:'medium', naiModel:'nai-diffusion-4-5-full', naiSteps:28, naiScale:5, naiWidth:832, naiHeight:1216, naiSampler:'k_euler_ancestral', naiScheduler:'karras', prompt:'', negative:'', records:[], presets:[], characters:[], prompts:[] };
-const $ = (s, root=document) => root.querySelector(s);
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let busy=false;
-function cfg(){ extension_settings[EXT] ??= structuredClone(defaults); const s=extension_settings[EXT]; for(const key of ['records','presets','characters','prompts','vibes'])if(!Array.isArray(s[key]))s[key]=[]; return s; }
-const triggerRegistry = new TriggerRegistry();
-const autoTasks = new Set(); // 临时兼容旧入口状态；任务准入与状态以 triggerRegistry 为准。
-function markers(text){return parseImageMarkers(text).map(({index,prompt,marker})=>({index,prompt,raw:marker}));}
-function hideMarkersInTextNode(root){if(!root)return;const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())if(walker.currentNode.nodeValue?.includes('image###'))nodes.push(walker.currentNode);for(const node of nodes){node.nodeValue=node.nodeValue.replace(/image###[\s\S]*?###/g,'');}}
 async function requestImage(prompt, negativeOverride, vibeItem=null){
  const c=cfg();
  let raw='',data=null,res;
@@ -21,6 +5,54 @@ async function requestImage(prompt, negativeOverride, vibeItem=null){
   const naiModel=c.naiModel||'nai-diffusion-4-5-full';
   const payload={prompt,model:naiModel,sampler:c.naiSampler||'k_euler_ancestral',noise_schedule:c.naiScheduler||'karras',steps:Number(c.naiSteps)||28,scale:Number(c.naiScale)||5,width:Number(c.naiWidth)||832,height:Number(c.naiHeight)||1216,negative_prompt:negativeOverride??c.negative??'',decrisper:false,variety_boost:false,sm:false,sm_dyn:false,seed:-1};
   if(vibeItem){const vibe=extractUsableVibe(vibeItem.raw);if(!vibe)throw new Error('所选 Vibe 没有可直接发送的参考图编码；请从智绘姬重新导出包含图片数据的设置文件。');payload.reference_image_multiple=[vibe.image];payload.reference_strength_multiple=[vibe.strength];payload.reference_information_extracted_multiple=[vibe.informationExtracted];if(vibe.normalize!==undefined)payload.normalize_reference_strength=vibe.normalize;}
+  if(naiModel.includes('nai-diffusion-5'))payload.use_new_shared_trial=true;
+  res=await fetch('/api/novelai/generate-image',{method:'POST',headers:getRequestHeaders(window.token),body:JSON.stringify(payload)});
+  raw=await res.text();
+  if(!res.ok)throw new Error('NovelAI 请求失败（HTTP '+res.status+'）：'+raw.slice(0,240));
+  try{data=JSON.parse(raw);}catch{}
+  let value=data?.images?.[0]??data?.image??raw.trim();
+  if(typeof value!=='string'||!value)throw new Error('NovelAI 响应中没有可识别的图片');
+  return /^(data:|https?:)/.test(value)?value:'data:image/png;base64,'+value.replace(/^data:image\/[^;]+;base64,/,'');
+ }
+ if(!c.endpoint||!c.apiKey)throw new Error('请先在轻绘设置中填写 OpenAI 兼容 API 地址和 Key');
+ const model=String(c.model||'').toLowerCase();
+ const negative=String(negativeOverride??c.negative??'').trim();
+ const body={model:c.model,prompt,n:1,size:c.size};
+ if(model.includes('gpt-image')){
+  body.quality=c.quality;
+  if(negative)body.prompt=prompt+'\n\nAvoid these visual elements: '+negative;
+ }else if(negative){
+  body.negative_prompt=negative;
+ }
+ res=await fetch(c.endpoint.replace(/\/$/, '')+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.apiKey},body:JSON.stringify(body)});
+ raw=await res.text();
+ try{data=JSON.parse(raw);}catch{throw new Error('接口返回非 JSON（HTTP '+res.status+'）');}
+ if(!res.ok)throw new Error(data?.error?.message||'HTTP '+res.status);
+ const item=data?.data?.[0];let url=item?.b64_json?'data:image/png;base64,'+item.b64_json:item?.url;
+ const candidates=[data?.images?.[0],data?.output?.[0]];
+ for(const v of candidates){
+  if(url||v==null)continue;
+  if(typeof v==='string')url=/^(data:|https?:)/.test(v)?v:'data:image/png;base64,'+v;
+  else if(typeof v==='object')url=v.url||(v.b64_json?'data:image/png;base64,'+v.b64_json:null)||(v.image?'data:image/png;base64,'+v.image:null);
+ }
+ if(typeof url!=='string'||!url)throw new Error('响应中没有可识别的图片');
+ return url;
+}
+async function requestImage(prompt, negativeOverride, vibeItem=null){
+ const c=cfg();
+ let raw='',data=null,res;
+ if(c.provider==='novelai'){
+  const naiModel=c.naiModel||'nai-diffusion-4-5-full';
+  const payload={prompt,model:naiModel,sampler:c.naiSampler||'k_euler_ancestral',noise_schedule:c.naiScheduler||'karras',steps:Number(c.naiSteps)||28,scale:Number(c.naiScale)||5,width:Number(c.naiWidth)||832,height:Number(c.naiHeight)||1216,negative_prompt:negativeOverride??c.negative??'',decrisper:false,variety_boost:false,sm:false,sm_dyn:false,seed:-1};
+  if(vibeItem){
+   const vibes=Array.isArray(vibeItem.entries)&&vibeItem.entries.length
+    ?vibeItem.entries.map(item=>({image:item.image,strength:Number(item.strength??0.6),informationExtracted:Number(item.informationExtracted??1)}))
+    :(()=>{const one=extractUsableVibe(vibeItem.raw);return one?[one]:[];})();
+   if(!vibes.length)throw new Error('所选 Vibe 没有可用的图片数据，请重新导入智绘姬完整导出 JSON。');
+   payload.reference_image_multiple=vibes.map(v=>v.image);
+   payload.reference_strength_multiple=vibes.map(v=>v.strength);
+   payload.reference_information_extracted_multiple=vibes.map(v=>v.informationExtracted);
+  }
   if(naiModel.includes('nai-diffusion-5'))payload.use_new_shared_trial=true;
   res=await fetch('/api/novelai/generate-image',{method:'POST',headers:getRequestHeaders(window.token),body:JSON.stringify(payload)});
   raw=await res.text();
@@ -362,7 +394,7 @@ function renderLibrary(){
  if(prompts)prompts.innerHTML=(s.prompts||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.category||'未分类')+' · '+esc((p.prompt||'').slice(0,100))+'</p><button class="menu_button" data-prompt-load="'+i+'">载入</button><button class="menu_button" data-prompt-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无提示词</p>';
  if(chars)chars.innerHTML=(s.characters||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.appearance)+'</p><button class="menu_button" data-character-apply="'+i+'">追加外貌词</button><button class="menu_button" data-character-edit="'+i+'">编辑</button><button class="menu_button" data-character-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无角色</p>';
  if(presets)presets.innerHTML=(s.presets||[]).map((p,i)=>'<div class="ql-record"><strong>'+esc(p.name)+'</strong><p>'+esc(p.positive)+'</p><button class="menu_button" data-preset-apply="'+i+'">应用</button><button class="menu_button" data-preset-delete="'+i+'">删除</button></div>').join('')||'<p class="ql-muted">暂无预设</p>';
- if(vibes)vibes.innerHTML=(s.vibes||[]).map((v,i)=>'<div class="ql-record"><strong>'+esc(v.name||'未命名 Vibe')+'</strong><p>'+esc(v.hasPayload?'检测到疑似内嵌编码/图片内容':(v.hasRef?'检测到外部引用，需重新关联':'未识别到图片或编码字段'))+'</p><details><summary>查看迁移信息</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto">'+esc(JSON.stringify({sourcePath:v.sourcePath,hasPayload:v.hasPayload,hasRef:v.hasRef,raw:v.raw},null,2).slice(0,5000))+'</pre></details><button class="menu_button" data-vibe-delete="'+i+'">删除迁移项</button></div>').join('')||'<p class="ql-muted">暂无迁移的 Vibe 项目</p>';
+ if(vibes)vibes.innerHTML=(s.vibes||[]).map((v,i)=>'<div class="ql-record"><strong>'+esc(v.name||'未命名 Vibe')+'</strong><p>'+esc(Array.isArray(v.entries)&&v.entries.length?'已导入 '+v.entries.length+' 张 Vibe 图片，强度与分组对应关系已保留':(v.hasPayload?'检测到疑似内嵌编码/图片内容':(v.hasRef?'检测到外部引用，需重新关联':'未识别到图片或编码字段')))+'</p><details><summary>查看迁移信息</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto">'+esc(JSON.stringify({sourcePath:v.sourcePath,hasPayload:v.hasPayload,hasRef:v.hasRef,groupName:v.groupName,entries:Array.isArray(v.entries)?v.entries.map(({image,...meta})=>({...meta,image:'[PNG Base64 已保存，长度 '+String(image||'').length+' 字符]'})):undefined,raw:v.raw},null,2).slice(0,5000))+'</pre></details><button class="menu_button" data-vibe-delete="'+i+'">删除迁移项</button></div>').join('')||'<p class="ql-muted">暂无迁移的 Vibe 项目</p>';
  vibes?.querySelectorAll('[data-vibe-delete]').forEach(b=>b.onclick=()=>{if(!confirm('删除这条轻绘 Vibe 迁移记录？'))return;s.vibes.splice(+b.dataset.vibeDelete,1);save();renderLibrary();});
  renderActiveVibes();
  prompts?.querySelectorAll('[data-prompt-load]').forEach(b=>b.onclick=()=>{const p=s.prompts[+b.dataset.promptLoad];$('#ql-prompt').value=p.prompt;$('#ql-negative').value=p.negative||'';read();status('已载入提示词：'+p.name);});
@@ -382,13 +414,34 @@ function walkChatu8(data, pathName='', out={artists:[],prompts:[],vibes:[],warni
  seen.add(data);
  const pushUnique=(arr,item,keyFn)=>{if(!arr.some(x=>keyFn(x)===keyFn(item)))arr.push(item);};
  const normName=(obj,fallback)=>String(obj?.name||obj?.title||obj?.label||obj?.id||fallback||'未命名').slice(0,160);
- const isVibeKey=/vibe|氛围转移|参考图组|参考组/i.test(pathName);
+ const entries=Object.entries(data);
+ const textValue=(...keys)=>{for(const [k,v] of entries)if(keys.some(re=>re.test(k))&&typeof v==='string'&&v.trim())return v.trim();return '';};
+
+ // 智绘姬导出格式：groups 内保存分组与每张图的 vibeDataId/strength，
+ // vibeData 则以 ID 为键保存实际的 PNG Base64 数据。
+ const isChatu8VibeExport=data.groups&&typeof data.groups==='object'&&data.vibeData&&typeof data.vibeData==='object';
+ if(isChatu8VibeExport){
+  for(const [groupName,group] of Object.entries(data.groups)){
+   if(!group||typeof group!=='object'||!Array.isArray(group.vibes))continue;
+   const images=[];
+   for(const ref of group.vibes){
+    const stored=ref?.vibeDataId?data.vibeData[ref.vibeDataId]:null;
+    const image=typeof stored?.image==='string'?stored.image:'';
+    if(!image){out.warnings.push('Vibe 分组「'+groupName+'」缺少图片数据：'+String(ref?.vibeDataId||'未知 ID'));continue;}
+    images.push({vibeDataId:ref.vibeDataId,image,strength:Number.isFinite(Number(ref.strength))?Number(ref.strength):0.6,informationExtracted:Number.isFinite(Number(stored.informationExtracted??stored.information_extracted))?Number(stored.informationExtracted??stored.information_extracted):1,identifier:stored.identifier||'',version:stored.version??1,type:stored.type||'image'});
+   }
+   if(images.length)pushUnique(out.vibes,{name:String(groupName||'未命名 Vibe'),groupName:String(groupName||'未命名 Vibe'),entries:images,hasPayload:true,hasRef:false,sourcePath:pathName,source:'st-chatu8'},x=>x.name+'|'+x.sourcePath);
+   else if(group.vibes.length)out.warnings.push('Vibe 分组「'+groupName+'」没有找到可用图片数据。');
+  }
+  // 画师串和提示词仍可从导出文件的其他字段递归识别，但跳过大体积 Vibe 数据树。
+  for(const [k,v] of entries){if(k==='groups'||k==='vibeData')continue;if(v&&typeof v==='object')walkChatu8(v,pathName?pathName+'.'+k:k,out,seen);}
+  return out;
+ }
  if(Array.isArray(data)){
   for(let i=0;i<data.length;i++)walkChatu8(data[i],pathName+'['+i+']',out,seen);
   return out;
  }
- const entries=Object.entries(data);
- const textValue=(...keys)=>{for(const [k,v] of entries)if(keys.some(re=>re.test(k))&&typeof v==='string'&&v.trim())return v.trim();return '';};
+ const isVibeKey=/vibe|氛围转移|参考图组|参考组/i.test(pathName);
  const name=normName(data,pathName.split(/[.[]/).filter(Boolean).pop());
  const pos=textValue(/画师串|画师|artist|positive.?prompt|正向提示词|正面提示词|promptPositive/i);
  const neg=textValue(/negative.?prompt|负向提示词|负面提示词/i);
@@ -396,20 +449,17 @@ function walkChatu8(data, pathName='', out={artists:[],prompts:[],vibes:[],warni
  const vibeLike=isVibeKey||/vibe|氛围转移|参考图组|参考组/i.test(String(data.type||data.kind||''));
  if(vibeLike){
   const serialized=safeMigrationStringify(data)||'';
-  const hasPayload=/data:image\//i.test(serialized)||/base64|encoded.?image|imageData|referenceImage|vibeData|vibe.*data/i.test(serialized);
-  const hasRef=/https?:\/\/|blob:|cache.?id|image.?id|file.?name|path/i.test(serialized);
+  const hasPayload=/data:image\\//i.test(serialized)||/base64|encoded.?image|imageData|referenceImage|vibeData|vibe.*data/i.test(serialized);
+  const hasRef=/https?:\\/\\/|blob:|cache.?id|image.?id|file.?name|path/i.test(serialized);
   pushUnique(out.vibes,{name,sourcePath:pathName,raw:data,hasPayload,hasRef},x=>x.name+'|'+x.sourcePath);
  }
- if(pos){
-  pushUnique(out.artists,{name,positive:pos,negative:neg,sourcePath:pathName},x=>x.name+'|'+x.positive);
- } else if(prompt && (entries.some(([k])=>/preset|预设|artist|画师|style|画风/i.test(k)) || /preset|预设|artist|画师|style|画风/i.test(pathName))){
+ if(pos)pushUnique(out.artists,{name,positive:pos,negative:neg,sourcePath:pathName},x=>x.name+'|'+x.positive);
+ else if(prompt&&(entries.some(([k])=>/preset|预设|artist|画师|style|画风/i.test(k))||/preset|预设|artist|画师|style|画风/i.test(pathName))){
   pushUnique(out.prompts,{name,category:'智绘姬迁移',prompt,negative:neg,sourcePath:pathName},x=>x.name+'|'+x.prompt);
  }
  for(const [k,v] of entries){
   if(v&&typeof v==='object')walkChatu8(v,pathName?pathName+'.'+k:k,out,seen);
-  else if(typeof v==='string'&&/画师串|artist.?string/i.test(k)&&v.trim()){
-   pushUnique(out.artists,{name,positive:v.trim(),negative:neg,sourcePath:pathName+'.'+k},x=>x.name+'|'+x.positive);
-  }
+  else if(typeof v==='string'&&/画师串|artist.?string/i.test(k)&&v.trim())pushUnique(out.artists,{name,positive:v.trim(),negative:neg,sourcePath:pathName+'.'+k},x=>x.name+'|'+x.positive);
  }
  return out;
 }
@@ -464,7 +514,7 @@ function importChatu8Candidate(){
  }
  for(const item of candidate.vibes){
   if(s.vibes.some(x=>x.name===item.name&&x.sourcePath===item.sourcePath))continue;
-  s.vibes.unshift({name:item.name,raw:item.raw,hasPayload:item.hasPayload,hasRef:item.hasRef,sourcePath:item.sourcePath,source:'st-chatu8',importedAt:Date.now()});vibes++;
+  s.vibes.unshift({name:item.name,groupName:item.groupName||item.name,entries:Array.isArray(item.entries)?item.entries.map(v=>({...v})):undefined,raw:item.raw,hasPayload:item.hasPayload,hasRef:item.hasRef,sourcePath:item.sourcePath,source:'st-chatu8',importedAt:Date.now()});vibes++;
  }
  s.presets=s.presets.slice(0,500);s.prompts=s.prompts.slice(0,500);s.vibes=s.vibes.slice(0,200);
  save();renderLibrary();
