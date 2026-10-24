@@ -17,7 +17,7 @@ async function requestImage(prompt, negativeOverride){
  const c=cfg();
  let raw='',data=null,res;
  if(c.provider==='novelai'){
-  const payload={prompt,model:c.naiModel||'nai-diffusion-4-5-full',sampler:c.naiSampler||'k_euler_ancestral',noise_schedule:c.naiScheduler||'karras',steps:Number(c.naiSteps)||28,scale:Number(c.naiScale)||5,width:Number(c.naiWidth)||832,height:Number(c.naiHeight)||1216,negative_prompt:negativeOverride??c.negative??'',seed:-1};
+  const payload={prompt,model:c.naiModel||'nai-diffusion-4-5-full',sampler:c.naiSampler||'k_euler_ancestral',scheduler:c.naiScheduler||'karras',steps:Number(c.naiSteps)||28,scale:Number(c.naiScale)||5,width:Number(c.naiWidth)||832,height:Number(c.naiHeight)||1216,negative_prompt:negativeOverride??c.negative??'',seed:-1};
   res=await fetch('/api/novelai/generate-image',{method:'POST',headers:getRequestHeaders(window.token),body:JSON.stringify(payload)});
   raw=await res.text();
   if(!res.ok)throw new Error('NovelAI 请求失败（HTTP '+res.status+'）：'+raw.slice(0,240));
