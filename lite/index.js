@@ -2,6 +2,7 @@ import { extension_settings, saveSettingsDebounced } from '../../../extensions.j
 import { eventSource, event_types } from '../../../script.js';
 import { getContext } from '../../../extensions.js';
 import { getRequestHeaders } from '../../../script.js';
+import { parseImageMarkers } from './trigger-core.js';
 
 const EXT = 'qinghui_lite';
 const defaults = { provider:'openai', endpoint:'https://api.openai.com/v1', apiKey:'', model:'gpt-image-1', size:'1024x1024', quality:'medium', naiModel:'nai-diffusion-4-5-full', naiSteps:28, naiScale:5, naiWidth:832, naiHeight:1216, naiSampler:'k_euler_ancestral', naiScheduler:'karras', prompt:'', negative:'', records:[] };
@@ -10,8 +11,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 let busy=false;
 function cfg(){ extension_settings[EXT] ??= structuredClone(defaults); return extension_settings[EXT]; }
 const autoTasks = new Set();
-const markerRe = /image###([\s\S]*?)###/g;
-function markers(text){const out=[];markerRe.lastIndex=0;let m;while((m=markerRe.exec(text))!==null){if(m[1].trim())out.push({index:m.index,prompt:m[1].trim(),raw:m[0]});}return out;}
+function markers(text){return parseImageMarkers(text).map(({index,prompt,marker})=>({index,prompt,raw:marker}));}
 function hideMarkersInTextNode(root){if(!root)return;const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())if(walker.currentNode.nodeValue?.includes('image###'))nodes.push(walker.currentNode);for(const node of nodes){node.nodeValue=node.nodeValue.replace(/image###[\s\S]*?###/g,'');}}
 async function requestImage(prompt, negativeOverride){
  const c=cfg();
