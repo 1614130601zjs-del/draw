@@ -9,12 +9,49 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 let busy=false;
 function cfg(){ extension_settings[EXT] ??= structuredClone(defaults); return extension_settings[EXT]; }
 const autoTasks = new Set();
-const markerRe = /image###([\s\S]*?)###/g;
+const markerRe = /image###([\\s\\S]*?)###/g;
 function markers(text){const out=[];markerRe.lastIndex=0;let m;while((m=markerRe.exec(text))!==null){if(m[1].trim())out.push({index:m.index,prompt:m[1].trim(),raw:m[0]});}return out;}
-function hideMarkersInTextNode(root){if(!root)return;const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())if(walker.currentNode.nodeValue?.includes('image###'))nodes.push(walker.currentNode);for(const node of nodes){node.nodeValue=node.nodeValue.replace(/image###[\s\S]*?###/g,'');}}
+function hideMarkersInTextNode(root){if(!root)return;const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())if(walker.currentNode.nodeValue?.includes('image###'))nodes.push(walker.currentNode);for(const node of nodes){node.nodeValue=node.nodeValue.replace(/image###[\\s\\S]*?###/g,'');}}
 async function requestImage(prompt){const c=cfg();if(!c.endpoint||!c.apiKey)throw new Error('请先在轻绘设置中填写 API 地址和 Key');const body={model:c.model,prompt,n:1,size:c.size};if(c.model.toLowerCase().includes('gpt-image'))body.quality=c.quality;const res=await fetch(c.endpoint.replace(/\\/$/, '')+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.apiKey},body:JSON.stringify(body)});const raw=await res.text();let data;try{data=JSON.parse(raw);}catch{throw new Error('接口返回非 JSON（HTTP '+res.status+'）');}if(!res.ok)throw new Error(data?.error?.message||'HTTP '+res.status);const item=data?.data?.[0];let url=item?.b64_json?'data:image/png;base64,'+item.b64_json:item?.url;if(!url&&data?.images?.[0]){const v=data.images[0];url=/^(data:|https?:)/.test(v)?v:'data:image/png;base64,'+v;}if(!url)throw new Error('响应中没有可识别的图片');return url;}
-function addMessageImage(host,url,prompt,taskKey){if(!host||host.querySelector('[data-ql-task="'+CSS.escape(taskKey)+'"]'))return;const card=document.createElement('figure');card.className='ql-chat-image';card.dataset.qlTask=taskKey;const img=document.createElement('img');img.loading='lazy';img.alt='轻绘生成图片';img.src=url;const cap=document.createElement('figcaption');cap.textContent=prompt;card.append(img,cap);host.append(card);}
-async function processLatestAssistantMessage(){const context=getContext();const chat=context?.chat;if(!Array.isArray(chat)||!chat.length)return;let messageIndex=-1;for(let i=chat.length-1;i>=0;i--){if(!chat[i]?.is_user&&!chat[i]?.is_system&&typeof chat[i]?.mes==='string'){messageIndex=i;break;}}if(messageIndex<0)return;const message=chat[messageIndex];const found=markers(message.mes);if(!found.length)return;const host=document.querySelector('.mes[mesid="'+messageIndex+'"] .mes_text');if(host)hideMarkersInTextNode(host);for(const marker of found){const taskKey=[context.chatId||'chat',messageIndex,message.swipe_id??0,marker.index].join(':');if(!host)continue;if(autoTasks.has(taskKey))continue;autoTasks.add(taskKey);const pending=document.createElement('p');pending.className='ql-chat-image-status';pending.textContent='轻绘：正在生成图片…';host.append(pending);try{const url=await requestImage(marker.prompt);pending.remove();addMessageImage(host,url,marker.prompt,taskKey);const c=cfg();c.records.unshift({at:Date.now(),prompt:marker.prompt,negative:'',model:c.model,size:c.size,quality:c.quality,dataUrl:url,source:'chat',messageIndex,taskKey});c.records=c.records.slice(0,20);save();}catch(error){pending.textContent='轻绘生成失败：'+(error?.message||String(error));autoTasks.delete(taskKey);}}}
+function addMessageImage(host,url,prompt,taskKey,recordMeta={}) {
+ if(!host)return;
+ let card=[...host.querySelectorAll('.ql-chat-image')].find(el=>el.dataset.qlTask===taskKey);
+ if(!card){
+  card=document.createElement('figure');card.className='ql-chat-image';card.dataset.qlTask=taskKey;
+  const img=document.createElement('img');img.loading='lazy';img.alt='轻绘生成图片';
+  const caption=document.createElement('figcaption');caption.className='ql-chat-image-prompt';caption.textContent=prompt;
+  const controls=document.createElement('div');controls.className='ql-chat-image-controls';
+  const prev=document.createElement('button');prev.type='button';prev.className='menu_button';prev.textContent='‹ 上一张';
+  const count=document.createElement('span');count.className='ql-chat-image-count';count.textContent='1 / 1';
+  const next=document.createElement('button');next.type='button';next.className='menu_button';next.textContent='下一张 ›';
+  const reroll=document.createElement('button');reroll.type='button';reroll.className='menu_button';reroll.textContent='再画一张';
+  controls.append(prev,count,next,reroll);card.append(img,caption,controls);host.append(card);
+  card._qlCandidates=[];card._qlIndex=0;
+  const render=()=>{const list=card._qlCandidates;const i=card._qlIndex;img.src=list[i].url;count.textContent=(i+1)+' / '+list.length;prev.disabled=i<=0;next.disabled=i>=list.length-1;};
+  prev.addEventListener('click',()=>{if(card._qlIndex>0){card._qlIndex--;render();}});
+  next.addEventListener('click',()=>{if(card._qlIndex<card._qlCandidates.length-1){card._qlIndex++;render();}});
+  reroll.addEventListener('click',async()=>{if(card.dataset.qlBusy==='1')return;card.dataset.qlBusy='1';reroll.disabled=true;const old=reroll.textContent;reroll.textContent='生成中…';try{const fresh=await requestImage(prompt);card._qlCandidates.push({url:fresh,at:Date.now()});card._qlIndex=card._qlCandidates.length-1;render();storeChatRecord(fresh,prompt,taskKey,recordMeta);}catch(e){const note=document.createElement('p');note.className='ql-chat-image-status';note.textContent='轻绘生成失败：'+(e?.message||String(e));card.append(note);}finally{card.dataset.qlBusy='0';reroll.disabled=false;reroll.textContent=old;}});
+  card._qlRender=render;
+ }
+ if(!card._qlCandidates.some(item=>item.url===url)){card._qlCandidates.push({url,at:Date.now()});card._qlIndex=card._qlCandidates.length-1;}
+ card._qlRender?.();
+}
+function storeChatRecord(url,prompt,taskKey,meta={}){const c=cfg();c.records.unshift({at:Date.now(),prompt,negative:'',model:c.model,size:c.size,quality:c.quality,dataUrl:url,source:'chat',messageIndex:meta.messageIndex,taskKey});c.records=c.records.slice(0,20);save();}
+async function processLatestAssistantMessage(){
+ const context=getContext();const chat=context?.chat;if(!Array.isArray(chat)||!chat.length)return;
+ let messageIndex=-1;for(let i=chat.length-1;i>=0;i--){if(!chat[i]?.is_user&&!chat[i]?.is_system&&typeof chat[i]?.mes==='string'){messageIndex=i;break;}}
+ if(messageIndex<0)return;
+ const message=chat[messageIndex];const found=markers(message.mes);if(!found.length)return;
+ const host=document.querySelector('.mes[mesid="'+messageIndex+'"] .mes_text');if(host)hideMarkersInTextNode(host);
+ for(const marker of found){
+  const taskKey=[context.chatId||'chat',messageIndex,message.swipe_id??0,marker.index].join(':');
+  if(!host||autoTasks.has(taskKey))continue;
+  autoTasks.add(taskKey);
+  const pending=document.createElement('p');pending.className='ql-chat-image-status';pending.textContent='轻绘：正在生成图片…';host.append(pending);
+  try{const url=await requestImage(marker.prompt);pending.remove();addMessageImage(host,url,marker.prompt,taskKey,{messageIndex});storeChatRecord(url,marker.prompt,taskKey,{messageIndex});}
+  catch(error){pending.textContent='轻绘生成失败：'+(error?.message||String(error));autoTasks.delete(taskKey);}
+ }
+}
 function save(){ saveSettingsDebounced(); }
 function html(){return `<section id="qinghui-lite-panel">
 <div class="ql-card"><h3>轻绘 Lite · 测试版</h3><p class="ql-muted">独立工作区可先测试 GPT / OpenAI 兼容生图。酒馆消息自动触发、NovelAI 与状态栏精准注入尚未接通。</p>
