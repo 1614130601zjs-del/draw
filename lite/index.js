@@ -94,7 +94,7 @@ async function processLatestAssistantMessage(){
 let statusbarObserver=null;
 const statusbarObservedDocs=new WeakSet();
 let statusbarSerial=0;
-function parseStatusbarMarker(text){const match=String(text||'').match(/image###([\\s\\S]*?)###/);return match?.[1]?.trim()||'';}
+function parseStatusbarMarker(text){const match=String(text||'').match(/image###([\s\S]*?)###/);return match?.[1]?.trim()||'';}
 function renderStatusbarCard(frame,prompt,url,taskKey){
  frame.replaceChildren();
  const card=document.createElement('div');card.className='ql-statusbar-card';card.dataset.qlTask=taskKey;card.style.cssText='position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#000;';
