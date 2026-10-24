@@ -175,11 +175,19 @@ async function processStatusbarFrames(){
  document.querySelectorAll('iframe').forEach(iframe=>{try{if(iframe.contentDocument)docs.push(iframe.contentDocument);}catch{}});
  const frames=docs.flatMap(doc=>Array.from(doc.querySelectorAll('.shot-frame.scanning')));
  for(const frame of frames){
-  if(frame.dataset.qlBusy==='1'||frame.dataset.qlDone==='1')continue;
+  // 先读取当前提示词，再判断是否已处理：正则重渲染复用同一个 DOM 时，
+  // 新提示词必须建立新任务，不能被旧的 qlDone 标记永久挡住。
   const prompt=parseStatusbarMarker(frame.textContent);
   if(!prompt)continue;
-  frame.dataset.qlPrompt=prompt;frame.dataset.qlBusy='1';
-  const taskKey='statusbar:'+((getContext()?.chatId)||'chat')+':'+(frame.dataset.qlTaskId||(frame.dataset.qlTaskId=''+(++statusbarSerial)));
+  if(frame.dataset.qlPrompt!==prompt){
+   frame.dataset.qlPrompt=prompt;
+   frame.dataset.qlDone='';
+   frame.dataset.qlTaskId=''+(++statusbarSerial);
+   frame.querySelectorAll('.ql-statusbar-card,.ql-statusbar-error,.ql-statusbar-loading').forEach(el=>el.remove());
+  }
+  if(frame.dataset.qlBusy==='1'||frame.dataset.qlDone==='1')continue;
+  frame.dataset.qlBusy='1';
+  const taskKey='statusbar:'+((getContext()?.chatId)||'chat')+':'+frame.dataset.qlTaskId;
   const loading=document.createElement('div');loading.className='ql-statusbar-loading';loading.textContent='轻绘：正在生成画面…';
   loading.style.cssText='position:absolute;inset:0;z-index:7;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);color:#fff;font-size:13px;';
   if(getComputedStyle(frame).position==='static')frame.style.position='relative';
