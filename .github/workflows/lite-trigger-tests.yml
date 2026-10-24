@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - "lite/trigger-core.js"
+      - "lite/index.js"
       - "lite/trigger-core.test.mjs"
       - ".github/workflows/lite-trigger-tests.yml"
 
