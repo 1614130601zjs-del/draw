@@ -66,3 +66,24 @@ test('failed requests can be explicitly retried without losing earlier result ID
   registry.markSucceeded('t2', 'image-2');
   assert.deepEqual(registry.get('t2').resultIds, ['image-2']);
 });
+
+test('successful trigger can create an explicit new candidate without overwriting old results', () => {
+  const registry = new TriggerRegistry();
+  registry.begin('reroll', { prompt: 'portrait' });
+  registry.markRunning('reroll');
+  registry.markSucceeded('reroll', 'image-1');
+
+  const candidate = registry.beginCandidate('reroll');
+  assert.equal(candidate.accepted, true);
+  assert.deepEqual(candidate.task.resultIds, ['image-1']);
+  registry.markRunning('reroll');
+  registry.markSucceeded('reroll', 'image-2');
+  assert.deepEqual(registry.get('reroll').resultIds, ['image-1', 'image-2']);
+});
+
+test('explicit reroll is rejected unless the previous candidate succeeded', () => {
+  const registry = new TriggerRegistry();
+  assert.equal(registry.beginCandidate('missing').accepted, false);
+  registry.begin('pending');
+  assert.equal(registry.beginCandidate('pending').accepted, false);
+});
