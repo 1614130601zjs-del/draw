@@ -1,0 +1,25 @@
+name: 轻绘 Lite 触发核心测试
+
+on:
+  push:
+    branches: [feature/lite-image-core]
+    paths:
+      - "lite/trigger-core.js"
+      - "lite/trigger-core.test.mjs"
+      - ".github/workflows/lite-trigger-tests.yml"
+  pull_request:
+    paths:
+      - "lite/trigger-core.js"
+      - "lite/trigger-core.test.mjs"
+      - ".github/workflows/lite-trigger-tests.yml"
+
+jobs:
+  trigger-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test marker parsing and task deduplication
+        run: node --experimental-default-type=module lite/trigger-core.test.mjs
