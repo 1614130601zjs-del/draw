@@ -242,8 +242,16 @@ jQuery(()=>{
  if(mount&&!$('#qinghui-lite-panel')){mount.insertAdjacentHTML('beforeend',html());init();}
  observeStatusbarFrames();
  if(!eventSource||!event_types)return;
- const scheduleScan=()=>setTimeout(()=>{processLatestAssistantMessage().catch(e=>console.warn('[轻绘 Lite] 自动触发失败',e));processStatusbarFrames().catch(e=>console.warn('[轻绘 Lite] 状态栏触发失败',e));},100);
- if(event_types.GENERATION_ENDED)eventSource.on(event_types.GENERATION_ENDED,scheduleScan);
- if(event_types.MESSAGE_SWIPED)eventSource.on(event_types.MESSAGE_SWIPED,scheduleScan);
+ let scanTimer=null;
+ const scheduleScan=()=>{if(scanTimer)clearTimeout(scanTimer);scanTimer=setTimeout(()=>{
+  scanTimer=null;
+  processLatestAssistantMessage().catch(e=>console.warn('[轻绘 Lite] 自动触发失败',e));
+  processStatusbarFrames().catch(e=>console.warn('[轻绘 Lite] 状态栏触发失败',e));
+ },120);};
+ // 生成结束与 swipe 是稳定兜底；如果当前酒馆版本提供流式事件，则在完整 marker 到达时提前触发。
+ for(const name of ['STREAM_TOKEN_RECEIVED','MESSAGE_UPDATED','GENERATION_ENDED','MESSAGE_SWIPED']){
+  const eventName=event_types[name];
+  if(eventName)eventSource.on(eventName,scheduleScan);
+ }
  if(event_types.CHAT_CHANGED)eventSource.on(event_types.CHAT_CHANGED,()=>{autoTasks.clear();});
 });
