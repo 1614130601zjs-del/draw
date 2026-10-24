@@ -198,7 +198,7 @@ function statusbarError(frame,prompt,taskKey,error){
  const note=document.createElement('div');note.className='ql-statusbar-error';
  const text=document.createElement('span');text.textContent='轻绘生成失败：'+(error?.message||String(error))+' ';
  const retry=document.createElement('button');retry.type='button';retry.className='menu_button';retry.textContent='点击重试';
- retry.onclick=async()=>{retry.disabled=true;retry.textContent='生成中…';try{const url=await requestImage(prompt);const card=frame.querySelector('.ql-statusbar-card');if(card&&typeof card._qlAddCandidate==='function'){card._qlAddCandidate(url);note.remove();}else{renderStatusbarCard(frame,prompt,url,taskKey);}storeChatRecord(url,prompt,taskKey,{source:'statusbar'});}catch(e){statusbarError(frame,prompt,taskKey,e);}};
+ retry.onclick=async()=>{const accepted=triggerRegistry.begin(taskKey,{prompt,source:'statusbar-retry'});if(!accepted.accepted)return;triggerRegistry.markRunning(taskKey);retry.disabled=true;retry.textContent='生成中…';try{const url=await requestImage(prompt);const card=frame.querySelector('.ql-statusbar-card');if(card&&typeof card._qlAddCandidate==='function'){card._qlAddCandidate(url);note.remove();}else{renderStatusbarCard(frame,prompt,url,taskKey);}storeChatRecord(url,prompt,taskKey,{source:'statusbar'});triggerRegistry.markSucceeded(taskKey,taskKey+':candidate:'+Date.now());}catch(e){triggerRegistry.markFailed(taskKey,e?.message||String(e));statusbarError(frame,prompt,taskKey,e);}};
  note.append(text,retry);
  if(existingCard){existingCard.append(note);}else{frame.querySelectorAll('.ql-statusbar-loading').forEach(el=>el.remove());frame.append(note);frame.classList.remove('scanning');frame.dataset.qlDone='1';}
 }
