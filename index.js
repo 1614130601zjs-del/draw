@@ -1,8 +1,5 @@
-import { extension_settings } from '../../../extensions.js';
-import { saveSettingsDebounced } from '../../../script.js';
-import { eventSource, event_types } from '../../../script.js';
-import { getContext } from '../../../extensions.js';
-import { getRequestHeaders } from '../../../script.js';
+import { extension_settings, getContext } from '/scripts/extensions.js';
+import { saveSettingsDebounced, eventSource, event_types, getRequestHeaders } from '/script.js';
 import { parseImageMarkers, makeTriggerId, TriggerRegistry } from './trigger-core.js';
 
 const EXT = 'qinghui_lite';
