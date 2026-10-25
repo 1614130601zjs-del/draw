@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>轻绘 Lite · UI 骨架</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-mark" aria-hidden="true">绘</div>
+      <div class="brand-copy"><h1>轻绘</h1><p>Lite · 移动生图工作台</p></div>
+      <span class="status-pill">界面骨架</span>
+    </header>
+    <nav class="tab-nav" aria-label="轻绘页面">
+      <button class="nav-tab active" data-page="workspace">生图</button>
+      <button class="nav-tab" data-page="presets">预设</button>
+      <button class="nav-tab" data-page="characters">角色库</button>
+      <button class="nav-tab" data-page="prompts">提示词库</button>
+      <button class="nav-tab" data-page="cache">图片缓存</button>
+      <button class="nav-tab" data-page="settings">基础设置</button>
+    </nav>
+    <main id="page-root" tabindex="-1">
+      <section class="page active" id="page-workspace">
+        <div class="section-heading"><div><p class="eyebrow">WORKSPACE</p><h2>自由生图</h2></div><span class="muted small">每次生成一张</span></div>
+        <div class="panel">
+          <label class="field-label" for="backend">生图后端</label>
+          <select id="backend"><option>NovelAI</option><option>GPT / OpenAI</option></select>
+          <label class="field-label" for="active-character">角色外貌词</label>
+          <select id="active-character"><option value="">不绑定角色</option><option value="char-1">示例角色 · 沈知遥</option></select>
+          <textarea id="appearance" rows="2" placeholder="选择角色后自动载入外貌词；也可以手动填写"></textarea>
+          <label class="field-label" for="active-preset">画风预设</label>
+          <select id="active-preset"><option>厚涂清透</option><option>日系线稿</option><option>电影感写实</option></select>
+          <label class="field-label" for="prompt">正向提示词</label>
+          <textarea id="prompt" rows="4" placeholder="输入或载入一套已经写好的完整提示词"></textarea>
+          <div class="inline-actions"><button class="button secondary" data-action="load-prompt">载入提示词库</button><button class="button secondary" data-action="clear-prompt">清空</button></div>
+          <label class="field-label" for="negative">负向提示词</label>
+          <textarea id="negative" rows="2" placeholder="负向提示词"></textarea>
+          <details><summary>本次参数</summary><div class="form-grid"><label>宽度<input type="number" value="832"></label><label>高度<input type="number" value="1216"></label><label>步数<input type="number" value="28"></label><label>CFG<input type="number" value="5"></label></div></details>
+          <button class="button primary full" data-action="generate"><span>✦</span> 生成图片</button>
+          <p class="notice">当前为交互骨架：生成按钮不会调用 API。接入真实后端后，每次点击只发起一次生成请求。</p>
+        </div>
+        <div class="section-heading compact"><div><p class="eyebrow">RESULTS</p><h2>本次结果</h2></div><span class="muted small" id="result-count">0 张</span></div>
+        <div class="empty-state" id="result-empty"><div class="empty-icon">▧</div><strong>生成结果会显示在这里</strong><p>多次生成的结果可左右切换，旧图不会被覆盖。</p></div>
+        <div class="result-card hidden" id="result-card"><div class="result-preview"><span>图片预览占位</span></div><div class="result-controls"><button class="icon-button" data-action="prev" aria-label="上一张">‹</button><span id="result-index">1 / 1</span><button class="icon-button" data-action="next" aria-label="下一张">›</button></div><button class="button secondary full" data-action="save-result">保存干净图片（演示）</button></div>
+      </section>
+      <section class="page" id="page-presets">
+        <div class="section-heading"><div><p class="eyebrow">RECIPES</p><h2>预设</h2></div><button class="button secondary" data-action="add-preset">＋ 新建</button></div>
+        <div class="subtabs" role="tablist"><button class="subtab active" data-subtab="artist">画师串</button><button class="subtab" data-subtab="vibe">Vibe</button><button class="subtab" data-subtab="params">默认参数</button></div>
+        <div class="panel subpage active" id="sub-artist"><div class="list-row"><div><strong>厚涂清透</strong><p>正向词、负向词与画风配方</p></div><button class="button secondary" data-action="edit-preset">编辑</button></div><div class="list-row"><div><strong>日系线稿</strong><p>独立配方，可复用相同 Vibe 资源</p></div><button class="button secondary" data-action="edit-preset">编辑</button></div><label class="field-label">正向画师串<textarea rows="3" placeholder="填写画师串"></textarea></label><label class="field-label">负向提示词<textarea rows="2" placeholder="填写负向提示词"></textarea></label></div>
+        <div class="panel subpage hidden" id="sub-vibe"><div class="empty-state"><div class="empty-icon">◇</div><strong>Vibe 资源库</strong><p>编码、导入、分组和选择功能将在接入后实现。</p><button class="button secondary" data-action="import-vibe">＋ 导入 Vibe / 图片</button></div></div>
+        <div class="panel subpage hidden" id="sub-params"><label class="field-label">当前后端<select><option>NovelAI</option><option>GPT / OpenAI</option></select></label><div class="form-grid"><label>宽度<input type="number" value="832"></label><label>高度<input type="number" value="1216"></label><label>步数<input type="number" value="28"></label><label>CFG<input type="number" value="5"></label></div><p class="notice">参数按后端分别保存；不向不支持的后端传递专属参数。</p></div>
+      </section>
+      <section class="page" id="page-characters">
+        <div class="section-heading"><div><p class="eyebrow">CHARACTERS</p><h2>角色库</h2></div><button class="button primary" data-action="add-character">＋ 添加角色</button></div>
+        <div class="panel"><label class="field-label">角色名称<input placeholder="例如：沈知遥"></label><label class="field-label">外貌词<textarea rows="4" placeholder="填写稳定外貌特征；不在未确认时自动覆盖"></textarea></label><label class="field-label">默认画风预设<select><option>跟随全局默认</option><option>厚涂清透</option><option>日系线稿</option></select></label><button class="button secondary full" data-action="save-character">保存角色（演示）</button></div>
+        <div class="panel list-row"><div><strong>示例角色 · 沈知遥</strong><p>已有外貌词 · 默认预设：厚涂清透</p></div><button class="button secondary" data-action="edit-character">查看</button></div>
+      </section>
+      <section class="page" id="page-prompts">
+        <div class="section-heading"><div><p class="eyebrow">PROMPT LIBRARY</p><h2>完整提示词库</h2></div><button class="button primary" data-action="add-prompt">＋ 新建</button></div>
+        <input id="prompt-search" type="search" placeholder="搜索提示词名称、分类或内容">
+        <div class="chip-row"><button class="chip selected">全部</button><button class="chip">单人</button><button class="chip">双人</button><button class="chip">BG</button><button class="chip">BL</button><button class="chip">GL</button><button class="chip">场景</button></div>
+        <article class="prompt-item"><div class="example-thumb">例图</div><div class="prompt-info"><strong>雨夜双人互动</strong><p>双人 · 场景 · 中文自然语言</p><p class="muted">保存完整正向词、负向词、备注和可选例图。</p><div class="inline-actions"><button class="button secondary" data-action="use-prompt">载入工作区</button><button class="button secondary" data-action="edit-prompt">编辑</button></div></div></article>
+        <article class="prompt-item"><div class="example-thumb">例图</div><div class="prompt-info"><strong>厚涂单人立绘</strong><p>单人 · 英文标签串</p><p class="muted">提示词条目独立于画风预设。</p><div class="inline-actions"><button class="button secondary" data-action="use-prompt">载入工作区</button><button class="button secondary" data-action="edit-prompt">编辑</button></div></div></article>
+      </section>
+      <section class="page" id="page-cache">
+        <div class="section-heading"><div><p class="eyebrow">LOCAL GALLERY</p><h2>图片缓存</h2></div><button class="button secondary" data-action="select-all">选择全部</button></div>
+        <div class="toolbar"><span class="muted small">0 张真实图片 · 示例卡片仅展示布局</span><button class="button danger" data-action="delete-selected">删除所选</button></div>
+        <div class="cache-grid"><button class="cache-item" data-action="toggle-select"><span class="example-thumb">预览</span><strong>示例图片 A</strong><small>厚涂清透 · NAI</small></button><button class="cache-item" data-action="toggle-select"><span class="example-thumb">预览</span><strong>示例图片 B</strong><small>日系线稿 · NAI</small></button><button class="cache-item" data-action="toggle-select"><span class="example-thumb">预览</span><strong>示例图片 C</strong><small>自由生图 · GPT</small></button></div>
+        <p class="notice">缓存正式版将写入酒馆本地持久化存储；删除缓存默认不删除聊天消息中的图片。</p>
+      </section>
+      <section class="page" id="page-settings">
+        <div class="section-heading"><div><p class="eyebrow">PREFERENCES</p><h2>基础设置</h2></div></div>
+        <div class="settings-group"><h3>触发方式</h3><label class="setting-row"><span><strong>普通聊天流式自动生成</strong><small>完整提示词确认后触发</small></span><input type="checkbox" checked></label><label class="setting-row"><span><strong>显示手动生成按钮</strong><small>普通聊天与状态栏可保留手动入口</small></span><input type="checkbox" checked></label><label class="setting-row"><span><strong>状态栏自动生成</strong><small>生成后回填原始画面容器</small></span><input type="checkbox" checked></label></div>
+        <div class="settings-group"><h3>图片包裹外观</h3><div class="chip-row"><button class="chip selected">极简</button><button class="chip">复古相框</button><button class="chip">剪贴簿</button><button class="chip">玻璃感</button><button class="chip">无边框</button></div></div>
+        <div class="settings-group"><h3>按钮显示</h3><label class="setting-row"><span>聊天图片卡片按钮</span><input type="checkbox" checked></label><label class="setting-row"><span>状态栏手动生成按钮</span><input type="checkbox" checked></label></div>
+        <div class="settings-group"><h3>GPT / OpenAI API</h3><label class="field-label">接口地址<input placeholder="https://…"></label><label class="field-label">API Key<input type="password" placeholder="仅本地配置，不要提交到仓库"></label><label class="field-label">模型<input placeholder="模型名称"></label></div>
+        <div class="settings-group"><h3>NovelAI API</h3><label class="field-label">Token<input type="password" placeholder="仅本地配置，不要提交到仓库"></label></div>
+        <div class="settings-group"><h3>LLM API（可选）</h3><label class="field-label">接口地址<input placeholder="https://…"></label><label class="field-label">模型<input placeholder="用于外貌词提取等辅助任务"></label></div>
+        <p class="notice">当前表单仅为布局示意，不会保存密钥或发起 API 请求。</p>
+      </section>
+    </main>
+    <footer class="bottom-note">轻绘 Lite · 原插件入口未修改 · 真实 API 尚未接入</footer>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js"></script>
+</body>
+</html>
