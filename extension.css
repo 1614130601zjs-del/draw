@@ -10,3 +10,18 @@
 
 /* Horizontal candidate swipes while preserving normal vertical page scrolling. */
 #chat .ql-chat-image img,#chat .ql-statusbar-card img{touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:default}
+
+#qinghui-lite-panel [hidden]{display:none!important}
+#qinghui-lite-panel .ql-library-head,#qinghui-lite-panel .ql-list-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+#qinghui-lite-panel .ql-library-head h3,#qinghui-lite-panel h4{margin:0}
+#qinghui-lite-panel .ql-library-tabs{margin:10px 0}
+#qinghui-lite-panel .ql-tab.active{outline:2px solid var(--SmartThemeQuoteColor,#e89bb8)}
+#qinghui-lite-panel .ql-library-page .ql-card{margin:10px 0}
+#qinghui-lite-panel .ql-library-record{display:flex;align-items:center;gap:10px}
+#qinghui-lite-panel .ql-record-main{flex:1;min-width:0}
+#qinghui-lite-panel .ql-record-main p{margin:4px 0 0;opacity:.7;font-size:12px}
+#qinghui-lite-panel .ql-record-actions{display:flex;gap:4px;flex-wrap:wrap}
+#qinghui-lite-panel .ql-record-actions button{margin:0}
+#qinghui-lite-panel .ql-select-item{width:20px!important;min-width:20px;flex:0 0 20px}
+#qinghui-lite-panel .ql-bulk-actions{display:flex;gap:4px;flex-wrap:wrap}
+#qinghui-lite-panel .ql-bulk-actions[hidden]{display:none!important}

@@ -1,8 +1,0 @@
-{
-  "name": "qinghui-lite",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "node --test trigger-core.test.js"
-  }
-}
